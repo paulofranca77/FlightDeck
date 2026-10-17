@@ -58,6 +58,7 @@ namespace FlightDeck
             tray = new NotifyIcon { ContextMenuStrip = trayMenu, Visible = true };
             try { tray.Icon = Theme.MakeLogoIcon(SystemInformation.SmallIconSize.Width); } catch { tray.Icon = Icon; }
             tray.DoubleClick += (s, e) => RestoreFromTray();
+            tray.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) RestoreFromTray(); };
             tray.BalloonTipClicked += (s, e) => RestoreFromTray();
             UpdateTrayText();
 
@@ -196,7 +197,7 @@ namespace FlightDeck
             AddNav("Apps", Theme.Glyph.Apps, AppsPg);
             AddNav("Layout", Theme.Glyph.Monitor, LayoutPg);
             navSettings = AddNav("Settings", Theme.Glyph.Settings, SettingsPg);
-            version = Theme.MakeLabel("v2.2.3" + (Util.IsElevated() ? "  ·  administrator" : ""), Theme.F9, Theme.Faint, Theme.Sidebar);
+            version = Theme.MakeLabel("v2.3.0" + (Util.IsElevated() ? "  ·  administrator" : ""), Theme.F9, Theme.Faint, Theme.Sidebar);
             sidebar.Controls.Add(version);
             sidebar.Resize += (s, e) => LayoutSidebar();
             LayoutSidebar();
@@ -362,6 +363,7 @@ namespace FlightDeck
                 }
             }
 
+            StopSimWatch();
             Live.Clear();
             InFlight = true;
             flightProfile = Cfg.Active;
@@ -412,6 +414,7 @@ namespace FlightDeck
         {
             if (Runner.Busy) { Runner.Cancel(); for (int i = 0; i < 30 && Runner.Busy; i++) System.Threading.Thread.Sleep(100); }
             if (Runner.Busy) return;
+            StopSimWatch();
             Live.Clear();
             runKind = "end";
             Dash.SetBusy(true);
@@ -435,16 +438,21 @@ namespace FlightDeck
 
             if (kind == "start" && !cancelled)
             {
+                pendingSim = Runner.Deferred.ToList();
+                string readyText = pendingSim.Count == 0
+                    ? "Your apps are in position. Right-click the FlightDeck icon to end the flight."
+                    : "Your apps are in position. " + Names(pendingSim) + " will open when the simulator is ready.";
+                if (pendingSim.Count > 0) StartSimWatch();
                 if (n == 0 && Visible)
                 {
-                    int count = (flightProfile ?? Cfg.Active).Apps.Count(a => a.Enabled);
-                    Celebrate(count, () =>
+                    int count = (flightProfile ?? Cfg.Active).Apps.Count(a => a.Enabled) - pendingSim.Count;
+                    Celebrate(Math.Max(0, count), () =>
                     {
                         TopMost = false;
-                        GoToTray("Flight ready ✈", "Your apps are in position. Right-click the FlightDeck icon to end the flight.");
+                        GoToTray("Flight ready ✈", readyText);
                     });
                 }
-                else if (n == 0) GoToTray("Flight ready ✈", "Your apps are in position. Right-click the FlightDeck icon to end the flight.");
+                else if (n == 0) GoToTray("Flight ready ✈", readyText);
                 else
                 {
                     // something needs attention: stay on screen so the log is visible
@@ -454,6 +462,11 @@ namespace FlightDeck
                 }
             }
             else if (kind == "start") TopMost = false;
+            else if (kind == "simready" && !cancelled)
+            {
+                if (n == 0) { try { Toast.Show("Simulator ready ✈", "Opened and placed the apps that were waiting for the sim.", RestoreFromTray); } catch { } }
+                else { RestoreFromTray(); try { Toast.Show("Simulator ready — check " + n + " app" + (n == 1 ? "" : "s"), "See the Activity log in FlightDeck for what went wrong.", RestoreFromTray); } catch { } }
+            }
             else if (kind == "end")
             {
                 int closed = (flightProfile ?? Cfg.Active).Apps.Count(a => a.Enabled && a.CloseOnEnd);
@@ -465,11 +478,61 @@ namespace FlightDeck
             }
 
             var t = new Timer { Interval = 6000 };
-            t.Tick += (s, e) => { t.Stop(); t.Dispose(); if (!Runner.Busy) { Live.Clear(); Dash.RefreshStatus(); } };
+            t.Tick += (s, e) =>
+            {
+                t.Stop(); t.Dispose();
+                if (Runner.Busy) return;
+                Live.Clear();
+                foreach (var a in pendingSim) Live[a.Id] = "Waiting for sim";
+                Dash.RefreshStatus();
+            };
             t.Start();
         }
 
         CelebrationOverlay celebration;
+
+        // ---------- "Wait for SimConnect" ----------
+        List<AppEntry> pendingSim = new List<AppEntry>();
+        Timer simWatch;
+
+        static string Names(List<AppEntry> apps)
+        {
+            var n = apps.Select(a => a.Name).ToList();
+            return n.Count <= 1 ? string.Join("", n) : string.Join(", ", n.Take(n.Count - 1)) + " and " + n.Last();
+        }
+
+        void StartSimWatch()
+        {
+            if (simWatch == null)
+            {
+                simWatch = new Timer { Interval = 3000 };
+                simWatch.Tick += (s, e) => CheckSim();
+            }
+            simWatch.Start();
+            UpdateTrayText();
+        }
+
+        void StopSimWatch()
+        {
+            if (simWatch != null) simWatch.Stop();
+            pendingSim.Clear();
+            UpdateTrayText();
+        }
+
+        void CheckSim()
+        {
+            if (!InFlight || pendingSim.Count == 0) { StopSimWatch(); return; }
+            if (Runner.Busy || !Native.SimConnectReady()) return;
+            simWatch.Stop();
+            var held = pendingSim.ToList();
+            pendingSim.Clear();
+            UpdateTrayText();
+            Log("The simulator is ready — opening " + Names(held) + "…");
+            runKind = "simready";
+            Dash.SetBusy(true);
+            Dash.ShowProgress(0, 1, "Simulator ready — opening " + Names(held) + "…", false);
+            Runner.StartDeferred(held, (flightProfile ?? Cfg.Active).Apps);
+        }
 
         void Celebrate(int apps, Action then, bool landing = false)
         {
@@ -496,6 +559,24 @@ namespace FlightDeck
             try { Toast.Show(title, text, RestoreFromTray); } catch { }
         }
 
+        bool minimizeHintShown;
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            // Settings → Minimize to tray: minimizing goes next to the clock instead of the taskbar
+            if (WindowState == FormWindowState.Minimized && Visible && tray != null && Cfg != null && !Cfg.KeepOnTaskbar)
+            {
+                Hide();
+                UpdateTrayText();
+                if (!minimizeHintShown)
+                {
+                    minimizeHintShown = true;
+                    try { Toast.Show("FlightDeck is in the tray", "Click its icon next to the clock to open it again. You can change this in Settings.", RestoreFromTray); } catch { }
+                }
+            }
+        }
+
         public void RestoreFromTray()
         {
             if (!Visible) Show();
@@ -508,7 +589,7 @@ namespace FlightDeck
         void UpdateTrayText()
         {
             if (tray == null) return;
-            string t = "FlightDeck · " + (InFlight ? "in flight · " : "") + Cfg.Active.Name;
+            string t = "FlightDeck · " + (InFlight ? (pendingSim != null && pendingSim.Count > 0 ? "waiting for the sim · " : "in flight · ") : "") + Cfg.Active.Name;
             tray.Text = t.Length > 63 ? t.Substring(0, 62) + "…" : t;
         }
 

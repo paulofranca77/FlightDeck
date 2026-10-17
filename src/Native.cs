@@ -93,6 +93,94 @@ namespace FlightDeck
         static extern bool QueryFullProcessImageName(IntPtr h, int flags, StringBuilder name, ref int size);
 
         public const uint WM_CLOSE = 0x0010;
+
+        // ---------- graceful shutdown ----------
+        [DllImport("user32.dll", SetLastError = true)]
+        static extern IntPtr SendMessageTimeout(IntPtr h, uint msg, IntPtr w, IntPtr l, uint flags, uint timeout, out IntPtr result);
+
+        /// <summary>Every top-level window of these processes, hidden ones included (tray apps keep theirs hidden).</summary>
+        public static List<IntPtr> AllWindowsOf(HashSet<int> pids)
+        {
+            var list = new List<IntPtr>();
+            EnumWindows(delegate (IntPtr h, IntPtr l)
+            {
+                uint pid;
+                GetWindowThreadProcessId(h, out pid);
+                if (pids.Contains((int)pid)) list.Add(h);
+                return true;
+            }, IntPtr.Zero);
+            return list;
+        }
+
+        /// <summary>
+        /// Tells the processes that Windows is closing them, the same messages a shutdown or an
+        /// installer restart sends. Well-behaved apps (WPF, WinForms, Electron, Chromium) save and
+        /// exit cleanly instead of hiding in the tray. Returns how many windows were told.
+        /// </summary>
+        public static int AskToEndSession(HashSet<int> pids)
+        {
+            const uint WM_QUERYENDSESSION = 0x0011, WM_ENDSESSION = 0x0016;
+            const uint SMTO_ABORTIFHUNG = 0x0002;
+            var ENDSESSION_CLOSEAPP = new IntPtr(1);
+            int n = 0;
+            var wins = AllWindowsOf(pids);
+            foreach (var h in wins)
+            {
+                IntPtr r;
+                if (SendMessageTimeout(h, WM_QUERYENDSESSION, IntPtr.Zero, ENDSESSION_CLOSEAPP, SMTO_ABORTIFHUNG, 3000, out r) != IntPtr.Zero) n++;
+            }
+            foreach (var h in wins)
+            {
+                IntPtr r;
+                SendMessageTimeout(h, WM_ENDSESSION, new IntPtr(1), ENDSESSION_CLOSEAPP, SMTO_ABORTIFHUNG, 3000, out r);
+            }
+            return n;
+        }
+
+        // ---------- SimConnect ----------
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct WIN32_FIND_DATA
+        {
+            public uint attr; public long created, accessed, written; public uint sizeHigh, sizeLow, r0, r1;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string name;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)] public string alt;
+        }
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern IntPtr FindFirstFile(string path, out WIN32_FIND_DATA d);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool FindNextFile(IntPtr h, out WIN32_FIND_DATA d);
+        [DllImport("kernel32.dll")] static extern bool FindClose(IntPtr h);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool WaitNamedPipe(string name, uint timeout);
+
+        /// <summary>
+        /// True once a simulator's SimConnect server is up (MSFS 2020/2024, P3D…). The simulator opens
+        /// its SimConnect pipe during its main load, so this is the moment add-ons can safely connect.
+        /// Only looks at the pipe's name: nothing connects to the simulator.
+        /// </summary>
+        public static bool SimConnectReady()
+        {
+            try
+            {
+                WIN32_FIND_DATA d;
+                var h = FindFirstFile(@"\\.\pipe\*", out d);
+                if (h != new IntPtr(-1))
+                {
+                    try
+                    {
+                        do { if (d.name != null && d.name.IndexOf("SimConnect", StringComparison.OrdinalIgnoreCase) >= 0) return true; }
+                        while (FindNextFile(h, out d));
+                    }
+                    finally { FindClose(h); }
+                }
+            }
+            catch { }
+            // fallback: the default MSFS pipe (exists but busy = 121/231 also counts as up)
+            try
+            {
+                if (WaitNamedPipe(@"\\.\pipe\Microsoft Flight Simulator\SimConnect", 1)) return true;
+                int err = Marshal.GetLastWin32Error();
+                return err == 121 || err == 231;
+            }
+            catch { return false; }
+        }
         public static readonly IntPtr HWND_BROADCAST = new IntPtr(0xffff);
 
         // ---------- windows ----------

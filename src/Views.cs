@@ -289,7 +289,7 @@ namespace FlightDeck
             switch (s)
             {
                 case "Running": case "Ready": c = Theme.Green; break;
-                case "Starting": case "Positioning": case "Closing": c = Theme.Orange; break;
+                case "Starting": case "Positioning": case "Closing": case "Waiting for sim": c = Theme.Orange; break;
                 case "Error": case "Not found": case "Needs admin": c = Theme.Red; break;
                 case "No position yet": case "In tray": c = Theme.Orange; break;
                 default: c = Theme.Faint; break;
@@ -348,4 +348,97 @@ namespace FlightDeck
         static readonly ToolTip tip = new ToolTip();
         protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); tip.SetToolTip(this, App.Name + " — " + status); }
     }
+    /// <summary>
+    /// First-run guide shown where the app list would be (Dashboard and Apps page) while the
+    /// profile has no apps: what to do, in order, with the buttons that do it.
+    /// </summary>
+    class SetupGuide : Panel
+    {
+        readonly Label title, footer;
+        readonly List<Control[]> steps = new List<Control[]>();   // badge, heading, text
+        public readonly FlatButton BtnCapture, BtnAdd;
+
+        static readonly string[,] Text3 =
+        {
+            { "Open your add-ons", "Start every app you use in a flight: charts, ATC, flight tracker, VA client, tools…" },
+            { "Put each window in its place", "Move and resize them on your monitors exactly how you like them. Snapping (Win + Z) works too." },
+            { "Save the layout", "Click Capture windows and tick your apps: FlightDeck saves each one with its position. Added an app another way? Use Grab position on the Apps page." },
+        };
+
+        public SetupGuide()
+        {
+            BackColor = Theme.Card;
+            title = Theme.MakeLabel("Set up your first flight", Theme.F11S, Theme.Text, Theme.Card);
+            Controls.Add(title);
+            for (int i = 0; i < 3; i++)
+            {
+                var badge = new StepBadge(i + 1);
+                var h = Theme.MakeLabel(Text3[i, 0], Theme.F10S, Theme.Text, Theme.Card);
+                var d = Theme.MakeLabel(Text3[i, 1], Theme.F9, Theme.Muted, Theme.Card);
+                d.AutoSize = false;
+                Controls.AddRange(new Control[] { badge, h, d });
+                steps.Add(new Control[] { badge, h, d });
+            }
+            BtnCapture = new FlatButton("Capture windows", Theme.Glyph.Windows, BtnStyle.Primary, 38);
+            BtnAdd = new FlatButton("Add an app manually", Theme.Glyph.Add, BtnStyle.Normal, 38);
+            footer = Theme.MakeLabel("Then click Start Flight: everything opens and goes right back into place. You can also drag a program or shortcut into this window.", Theme.F9, Theme.Muted, Theme.Card);
+            footer.AutoSize = false;
+            Controls.AddRange(new Control[] { BtnCapture, BtnAdd, footer });
+        }
+
+        /// <summary>Height the guide needs at a given width.</summary>
+        public int HeightFor(int width)
+        {
+            int lineW = Math.Max(Theme.S(200), width - Theme.S(44));
+            int y = Theme.S(40);
+            for (int i = 0; i < 3; i++) y += Theme.S(24) + TextH(Text3[i, 1], lineW) + Theme.S(14);
+            y += Theme.S(4) + Theme.S(38) + Theme.S(12) + TextH(footer.Text, width) + Theme.S(4);
+            return y;
+        }
+
+        static int TextH(string text, int width)
+        {
+            return TextRenderer.MeasureText(text, Theme.F9, new Size(width, int.MaxValue), TextFormatFlags.WordBreak).Height + Theme.S(2);
+        }
+
+        protected override void OnLayout(LayoutEventArgs e)
+        {
+            base.OnLayout(e);
+            if (footer == null) return;
+            int w = ClientSize.Width, indent = Theme.S(44), lineW = Math.Max(Theme.S(200), w - indent);
+            title.Location = new Point(0, 0);
+            int y = Theme.S(40);
+            for (int i = 0; i < 3; i++)
+            {
+                var c = steps[i];
+                c[0].Location = new Point(0, y - Theme.S(2));
+                c[1].Location = new Point(indent, y);
+                int dh = TextH(Text3[i, 1], lineW);
+                c[2].SetBounds(indent, y + Theme.S(24), lineW, dh);
+                y += Theme.S(24) + dh + Theme.S(14);
+            }
+            y += Theme.S(4);
+            BtnCapture.Location = new Point(indent, y);
+            BtnAdd.Location = new Point(BtnCapture.Right + Theme.S(10), y);
+            y += Theme.S(38) + Theme.S(12);
+            footer.SetBounds(0, y, w, TextH(footer.Text, w));
+        }
+
+        /// <summary>Round number badge in the accent colour.</summary>
+        class StepBadge : Owner
+        {
+            readonly int n;
+            public StepBadge(int number) { n = number; Size = new Size(Theme.S(28), Theme.S(28)); }
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                var g = e.Graphics;
+                g.Clear(BackColor);
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var b = new SolidBrush(Theme.Accent)) g.FillEllipse(b, 0, 0, Width - 1, Height - 1);
+                TextRenderer.DrawText(g, n.ToString(), Theme.F10S, new Rectangle(0, 0, Width, Height), Theme.AccentText,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            }
+        }
+    }
 }
+

@@ -9,8 +9,8 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("FlightDeck")]
 [assembly: AssemblyProduct("FlightDeck")]
 [assembly: AssemblyDescription("Opens, arranges and closes your flight sim companion apps")]
-[assembly: AssemblyVersion("2.2.3.0")]
-[assembly: AssemblyFileVersion("2.2.3.0")]
+[assembly: AssemblyVersion("2.3.0.0")]
+[assembly: AssemblyFileVersion("2.3.0.0")]
 
 namespace FlightDeck
 {

@@ -71,6 +71,7 @@ namespace FlightDeck
         readonly ProgressStrip progress;
         readonly Timer hideProgress;
         readonly Panel tiles;
+        readonly SetupGuide guide;
         readonly TextBox log;
         readonly List<AppTile> tileList = new List<AppTile>();
         readonly Timer poll;
@@ -98,7 +99,11 @@ namespace FlightDeck
             btnApply = new FlatButton("Re-apply layout", Theme.Glyph.Refresh, BtnStyle.Ghost, 34);
             btnApply.Click += (s, e) => Host.ApplyLayout();
             tiles = new Panel { BackColor = Theme.Card };
-            appsCard.Controls.AddRange(new Control[] { appsTitle, appsSub, btnApply, tiles, emptyLbl, warnLbl });
+            guide = new SetupGuide { Visible = false };
+            guide.BtnCapture.Click += (s, e) => Host.CaptureWindows();
+            guide.BtnAdd.Click += (s, e) => { Host.ShowPage(Host.AppsPg); Host.AppsPg.AddManual(); };
+            emptyLbl.Visible = false;
+            appsCard.Controls.AddRange(new Control[] { appsTitle, appsSub, btnApply, tiles, guide, warnLbl });
 
             logCard = new Card();
             logTitle = Theme.MakeLabel("Activity", Theme.F11S, Theme.Text, Theme.Card);
@@ -186,7 +191,8 @@ namespace FlightDeck
             tiles.ResumeLayout();
             int on = Host.Apps.Count(a => a.Enabled);
             appsSub.Text = Host.Apps.Count == 0 ? "" : on + " of " + Host.Apps.Count + " start with your flight";
-            emptyLbl.Visible = Host.Apps.Count == 0;
+            guide.Visible = Host.Apps.Count == 0;
+            btnApply.Visible = Host.Apps.Count > 0;
             int noPos = Host.Apps.Count(a => a.Enabled && !a.HasPos);
             warnLbl.Text = noPos == 0 ? "" : "⚠  " + noPos + (noPos == 1 ? " app has" : " apps have") +
                 " no position yet — click here, then \"Grab position\" on the Apps page.";
@@ -245,7 +251,8 @@ namespace FlightDeck
                 if (used < cols) tw = Math.Min(tw, Theme.S(320));
             }
             int tilesH = n == 0 ? 0 : rows * th + (rows - 1) * gap;
-            int cardH = Theme.S(60) + warnH + (tileList.Count == 0 ? Theme.S(40) : tilesH) + Theme.S(20);
+            int guideH = n == 0 ? guide.HeightFor(innerW) : 0;
+            int cardH = n == 0 ? Theme.S(62) + guideH + Theme.S(18) : Theme.S(60) + warnH + tilesH + Theme.S(20);
 
             appsCard.SetBounds(r.X, r.Y, r.Width, cardH);
             appsTitle.Location = new Point(pad, Theme.S(18));
@@ -255,7 +262,7 @@ namespace FlightDeck
             tiles.SetBounds(pad, Theme.S(60) + warnH, innerW, Math.Max(1, tilesH));
             for (int i = 0; i < n; i++)
                 tileList[i].SetBounds((i % cols) * (tw + gap), (i / cols) * (th + gap), tw, th);
-            emptyLbl.Location = new Point(pad, Theme.S(62));
+            if (n == 0) guide.SetBounds(pad, Theme.S(62), innerW, guideH);
 
             int ly = r.Y + cardH + Theme.S(16);
             logCard.SetBounds(r.X, ly, r.Width, Math.Max(Theme.S(100), r.Bottom - ly));
@@ -276,7 +283,7 @@ namespace FlightDeck
         readonly Card card;
         readonly TableHeader header;
         readonly Panel rows;
-        readonly Label empty;
+        readonly SetupGuide empty;
         readonly List<AppRow> rowList = new List<AppRow>();
         readonly ProfileButton profileBtn;
 
@@ -300,14 +307,16 @@ namespace FlightDeck
             rows = new Panel { BackColor = Theme.Card, AutoScroll = true };
             rows.HandleCreated += (s, e) => Native.DarkScrollbars(rows.Handle);
             rows.Resize += (s, e) => LayoutRows();
-            empty = Theme.MakeLabel("No apps yet.\n\nOpen your add-ons and arrange their windows the way you like (snap them, resize them),\nthen click  Capture windows  — FlightDeck fills in everything for you.\nYou can also drag a program or shortcut into this window.", Theme.F10, Theme.Muted, Theme.Card);
+            empty = new SetupGuide();
+            empty.BtnCapture.Click += (s, e) => Host.CaptureWindows();
+            empty.BtnAdd.Click += (s, e) => AddManual();
             dropLine = new Panel { BackColor = Theme.Accent, Visible = false, Height = Theme.S(3) };
             rows.Controls.Add(dropLine);
             card.Controls.AddRange(new Control[] { header, rows, empty });
             Controls.Add(card);
         }
 
-        void AddManual()
+        public void AddManual()
         {
             using (var ofd = new OpenFileDialog { Filter = "Programs and shortcuts (*.exe;*.lnk;*.bat;*.cmd)|*.exe;*.lnk;*.bat;*.cmd|All files|*.*", Title = "Choose a program" })
             {
@@ -354,6 +363,8 @@ namespace FlightDeck
             }
             rows.ResumeLayout();
             empty.Visible = rowList.Count == 0;
+            rows.Visible = rowList.Count > 0;
+            if (empty.Visible) empty.BringToFront();
             header.Visible = rowList.Count > 0;
             // the card's height depends on the number of rows: re-run the page layout, not just the rows
             rows.AutoScrollPosition = Point.Empty;
@@ -435,11 +446,12 @@ namespace FlightDeck
         {
             if (card == null || header == null || rows == null || empty == null) return;
             int contentH = Theme.S(48) + Math.Max(1, rowList.Count) * Theme.S(60) + Theme.S(10);
-            int ch = rowList.Count == 0 ? Theme.S(170) : Math.Min(r.Height, contentH);
+            int guideW = r.Width - Theme.S(44);
+            int ch = rowList.Count == 0 ? Theme.S(26) + empty.HeightFor(guideW) + Theme.S(22) : Math.Min(r.Height, contentH);
             card.SetBounds(r.X, r.Y, r.Width, ch);
             header.SetBounds(1, Theme.S(6), r.Width - 2, Theme.S(40));
             rows.SetBounds(1, Theme.S(46), r.Width - 2, ch - Theme.S(46) - Theme.S(8));
-            empty.Location = new Point(Theme.S(22), Theme.S(26));
+            empty.SetBounds(Theme.S(22), Theme.S(26), guideW, empty.HeightFor(guideW));
             LayoutRows();
         }
     }
@@ -516,17 +528,25 @@ namespace FlightDeck
             accent.Picked += c => Host.SetAccent(c);
             AddRow("Accent colour", "Buttons, highlights, the logo, the tray icon and your desktop shortcuts.", accent);
 
+            var minTray = new Toggle { Checked = !cfg.KeepOnTaskbar };
+            minTray.CheckedChanged += (s, e) => { cfg.KeepOnTaskbar = !minTray.Checked; Host.Save(); };
+            AddRow("Minimize to tray", "Minimizing FlightDeck puts it next to the clock instead of on the taskbar.", minTray);
+
             var launch = new TextField(cfg.LaunchTimeout.ToString()) { Width = Theme.S(90) };
             launch.ValueChanged += (s, e) => { int v = launch.IntValue(0); if (v >= 10) { cfg.LaunchTimeout = v; Host.Save(); } };
             AddRow("Launch timeout (seconds)", "How long Start Flight waits for each app window to appear.", launch);
 
             var close = new TextField(cfg.CloseTimeout.ToString()) { Width = Theme.S(90) };
             close.ValueChanged += (s, e) => { int v = close.IntValue(0); if (v >= 1) { cfg.CloseTimeout = v; Host.Save(); } };
-            AddRow("Close timeout (seconds)", "How long End Flight waits for apps to close on their own.", close);
+            AddRow("Close timeout (seconds)", "How long End Flight gives apps to close cleanly before the last resort below.", close);
 
             var force = new Toggle { Checked = cfg.ForceClose };
             force.CheckedChanged += (s, e) => { cfg.ForceClose = force.Checked; Host.Save(); };
-            AddRow("Force close", "Kill apps still running after the close timeout (e.g. apps that hide in the system tray).", force);
+            AddRow("Force close", "Last resort for apps still running after the close timeout. Apps are always asked to exit properly first.", force);
+
+            var simSafe = new Toggle { Checked = !cfg.ForceWhileSimRunning };
+            simSafe.CheckedChanged += (s, e) => { cfg.ForceWhileSimRunning = !simSafe.Checked; Host.Save(); };
+            AddRow("Never force close while the sim is open", "Forcing an add-on closed while it's connected to the simulator can crash the sim. Recommended.", simSafe);
 
             var admin = new Toggle { Checked = cfg.RunAsAdmin };
             admin.CheckedChanged += (s, e) =>

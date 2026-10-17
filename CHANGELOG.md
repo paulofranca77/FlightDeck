@@ -4,6 +4,20 @@ FlightDeck was built over a few days in October 2026 through a conversation betw
 (who tested every build on his own setup) and Claude, the AI that wrote the code. These are the steps it went
 through. Only v2.0 is published as a download; the earlier builds were private test versions.
 
+## v2.3.0
+- **Safer End Flight.** Apps that go to the tray instead of closing are now asked to exit the way Windows
+  does at shutdown, so they save and quit cleanly (DynamicLOD gets to restore your LODs). Forcing an app
+  closed is only a last resort, and FlightDeck never does it while the simulator is open, because killing
+  an add-on connected to the sim could crash it (a real MSFS 2024 crash report led to this). Close timeout
+  is now 20 s by default, and FlightDeck never closes the simulator itself, even if it's in your app list.
+- **Wait for SimConnect** (suggested by a user): an option per app to open it only once the simulator is
+  ready for add-ons, during its main loading. FlightDeck goes to the tray, waits, then opens and places
+  those apps and re-applies the window order.
+- **Minimize to tray** (Settings, on by default): minimizing puts FlightDeck next to the clock instead of
+  the taskbar. One click on the tray icon brings it back.
+- **First-run guide**: when a profile has no apps yet, the Dashboard and Apps page show what to do, step
+  by step, with the buttons right there.
+
 ## v2.2.3
 - Progress bar shows the moment you click Start Flight / End Flight / Re-apply layout, and climbs as each
   app opens (opening now counts for a bigger share of the bar).

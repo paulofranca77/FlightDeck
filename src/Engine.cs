@@ -32,6 +32,7 @@ namespace FlightDeck
         public int H { get; set; }
         public bool Maximized { get; set; }
         public double Delay { get; set; }
+        public bool WaitForSim { get; set; }   // open only once the simulator's SimConnect is up
 
         public AppEntry()
         {
@@ -89,11 +90,14 @@ namespace FlightDeck
         public bool SkipAdminPrompt { get; set; }
         public string AccentColor { get; set; }
         public string ShortcutIconsFor { get; set; }
+        public bool ForceWhileSimRunning { get; set; }   // off = never force-close an app while the simulator is open
+        public bool KeepOnTaskbar { get; set; }          // off = minimizing sends FlightDeck to the tray
+        public int SafeCloseVersion { get; set; }
 
         public Config()
         {
             Profiles = new List<Profile> { new Profile() };
-            LaunchTimeout = 120; CloseTimeout = 10; ForceClose = true;
+            LaunchTimeout = 120; CloseTimeout = 20; ForceClose = true; SafeCloseVersion = 1;
         }
 
         [ScriptIgnore]
@@ -134,7 +138,13 @@ namespace FlightDeck
                             foreach (var a in p.Apps) if (string.IsNullOrEmpty(a.Id)) a.Id = Guid.NewGuid().ToString("N");
                         }
                         if (c.LaunchTimeout <= 0) c.LaunchTimeout = 120;
-                        if (c.CloseTimeout <= 0) c.CloseTimeout = 10;
+                        if (c.CloseTimeout <= 0) c.CloseTimeout = 20;
+                        if (c.SafeCloseVersion < 1)
+                        {
+                            // v2.3: apps get more time to close cleanly (a short wait forced add-ons closed while the sim was open)
+                            if (c.CloseTimeout < 20) c.CloseTimeout = 20;
+                            c.SafeCloseVersion = 1;
+                        }
                         return c;
                     }
                 }
@@ -386,6 +396,29 @@ namespace FlightDeck
 
     static class Engine
     {
+        /// <summary>Simulator processes. FlightDeck never closes these, even if one is added as an app.</summary>
+        public static readonly string[] SimProcesses = { "FlightSimulator2024", "FlightSimulator", "Prepar3D", "X-Plane", "X-Plane-x86_64" };
+
+        static string Bare(string process)
+        {
+            string n = (process ?? "").Trim();
+            return n.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? n.Substring(0, n.Length - 4) : n;
+        }
+
+        public static bool IsSim(AppEntry a) { var n = Bare(a.Process); return SimProcesses.Any(x => x.Equals(n, StringComparison.OrdinalIgnoreCase)); }
+
+        /// <summary>Name of the simulator that is running, or null.</summary>
+        public static string RunningSim()
+        {
+            foreach (var n in SimProcesses)
+            {
+                var ps = Process.GetProcessesByName(n);
+                foreach (var p in ps) p.Dispose();
+                if (ps.Length > 0) return n.StartsWith("FlightSimulator") ? "Microsoft Flight Simulator" : n.StartsWith("X-Plane") ? "X-Plane" : n;
+            }
+            return null;
+        }
+
         public static bool IsRunning(AppEntry a)
         {
             if (string.IsNullOrWhiteSpace(a.Process)) return false;
@@ -526,7 +559,20 @@ namespace FlightDeck
         public void StartFlight(IList<AppEntry> list, bool positionOnly = false)
         {
             var apps = list.Where(a => a.Enabled).ToList();
-            Run(positionOnly ? "apply" : "start", () => DoStart(apps, positionOnly));
+            Deferred = new List<AppEntry>();
+            Run(positionOnly ? "apply" : "start", () => DoStart(apps, positionOnly, null));
+        }
+
+        /// <summary>Apps held back by "Wait for SimConnect" during the last Start Flight (not opened yet).</summary>
+        public List<AppEntry> Deferred = new List<AppEntry>();
+
+        /// <summary>The simulator is ready: open the held-back apps, then re-apply the stacking order of the whole profile.</summary>
+        public void StartDeferred(List<AppEntry> held, IList<AppEntry> profile)
+        {
+            var apps = held.ToList();
+            var stack = profile.Where(a => a.Enabled).ToList();
+            Deferred = new List<AppEntry>();
+            Run("simready", () => DoStart(apps, false, stack));
         }
 
         class Job
@@ -550,14 +596,14 @@ namespace FlightDeck
                    Math.Abs(w.Frame.Width - a.W) <= tol && Math.Abs(w.Frame.Height - a.H) <= tol;
         }
 
-        void DoStart(List<AppEntry> apps, bool positionOnly)
+        void DoStart(List<AppEntry> apps, bool positionOnly, List<AppEntry> stackApps)
         {
             if (apps.Count == 0) { L("No apps enabled — add some on the Apps page."); return; }
-            L(positionOnly ? "Applying layout…" : "Starting flight…");
+            L(positionOnly ? "Applying layout…" : stackApps != null ? "Opening the apps that waited for the simulator…" : "Starting flight…");
             bool elevated = Util.IsElevated();
             var jobs = new List<Job>();
             const int U = 8;   // per app: launching, opened (3), window found (4), placement passes (5-7), ready (8)
-            BeginUnits(apps, U, apps.Count > 1 ? 2 : 0);
+            BeginUnits(apps, U, (stackApps ?? apps).Count > 1 ? 2 : 0);
             Func<string> tally = () => " (" + ReadyCount + " of " + apps.Count + " ready)";
             Up(null, 0, positionOnly ? "Looking for your windows…" : "Getting ready…");
 
@@ -572,6 +618,15 @@ namespace FlightDeck
                     S(a, "Positioning");
                     jobs.Add(new Job { App = a, WasRunning = true, InTray = true, Launched = DateTime.Now.AddSeconds(-60) });
                     Up(a, 3, a.Name + " is in the tray…");
+                    continue;
+                }
+                if (w == null && !positionOnly && a.WaitForSim && !Native.SimConnectReady())
+                {
+                    // "Wait for SimConnect": opened later, when the simulator is ready for add-ons
+                    Deferred.Add(a);
+                    S(a, "Waiting for sim");
+                    L(a.Name + " will open when the simulator is ready (SimConnect).");
+                    Up(a, U, a.Name + " will open when the sim is ready");
                     continue;
                 }
                 if (w == null && !positionOnly)
@@ -716,23 +771,26 @@ namespace FlightDeck
                 }
             jobs.Clear();
             if (cancel) { L("Start cancelled."); return; }
-            if (apps.Count > 1)
+            var order = stackApps ?? apps;
+            if (order.Count > 1)
             {
                 // Final step, after the last (slowest) app was placed: set which window is in front.
-                var bs = BeforeStacking; if (bs != null) bs(positionOnly ? "apply" : "start");
+                var bs = BeforeStacking; if (bs != null) bs(positionOnly ? "apply" : stackApps != null ? "simready" : "start");
                 foreach (var fa in apps) units[fa] = U;
                 UpExtra(1, "Setting the window order…");
                 Thread.Sleep(1500);
                 if (cancel) return;
-                ApplyStacking(apps, false);
+                ApplyStacking(order, false);
                 Thread.Sleep(2500);            // some apps bring themselves forward when they finish loading
                 if (cancel) return;
-                ApplyStacking(apps, true);
-                L("Stacking order applied (front → back): " + string.Join(" › ", apps.Select(a => a.Name)));
+                ApplyStacking(order, true);
+                L("Stacking order applied (front → back): " + string.Join(" › ", order.Select(a => a.Name)));
             }
             foreach (var fa in apps) units[fa] = U;
-            UpExtra(2, positionOnly ? "Layout applied" : "All set");
-            L(positionOnly ? "Layout applied." : "Flight ready. Have a good one ✈");
+            UpExtra(2, positionOnly ? "Layout applied" : Deferred.Count > 0 ? "Waiting for the sim" : "All set");
+            if (positionOnly) L("Layout applied.");
+            else if (Deferred.Count > 0) L("Ready — waiting for the simulator to open " + string.Join(", ", Deferred.Select(a => a.Name)) + ". This happens during the sim's main loading.");
+            else L(stackApps != null ? "All apps are open." : "Flight ready. Have a good one ✈");
         }
 
         void NotFound(Job j)
@@ -799,48 +857,79 @@ namespace FlightDeck
         {
             if (apps.Count == 0) { L("Nothing to close — no app has \"Auto-close\" on."); return; }
             L("Ending flight…");
+            string sim = Engine.RunningSim();
             var all = Native.ListWindows();
             var closing = new List<AppEntry>();
+            var skipped = new HashSet<AppEntry>();
             foreach (var a in apps)
             {
-                var ps = Process.GetProcessesByName(a.Process);
-                if (ps.Length == 0) { S(a, "Closed"); continue; }
-                var pids = new HashSet<int>(ps.Select(p => p.Id));
-                foreach (var p in ps) p.Dispose();
+                if (Engine.IsSim(a))
+                {
+                    // safety net: the simulator is never closed by FlightDeck, even if it was added as an app
+                    skipped.Add(a); S(a, "Skipped");
+                    L(a.Name + ": that's the simulator — FlightDeck never closes it.");
+                    continue;
+                }
+                var pids = Engine.Pids(a);
+                if (pids.Count == 0) { S(a, "Closed"); continue; }
                 foreach (var w in all) if (pids.Contains(w.Pid)) Native.PostMessage(w.Handle, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
                 S(a, "Closing");
                 closing.Add(a);
             }
 
-            const int E = 3;   // per app: asked to close, (in tray), closed
+            const int E = 3;   // per app: asked to close, (in tray / asked to exit), closed
             BeginUnits(apps, E, 0);
-            foreach (var a in apps) Up(a, closing.Contains(a) ? 1 : E, closing.Contains(a) ? "Closing " + a.Name + "…" : a.Name + " was already closed");
+            foreach (var a in apps) Up(a, closing.Contains(a) ? 1 : E, closing.Contains(a) ? "Closing " + a.Name + "…" : skipped.Contains(a) ? a.Name + " left open" : a.Name + " was already closed");
             var start = DateTime.Now;
             var inTray = new HashSet<AppEntry>();
-            while (closing.Count > 0 && (DateTime.Now - start).TotalSeconds < cfg.CloseTimeout)
+            var told = new Dictionary<AppEntry, int>();     // how many times the app got the "Windows is closing you" messages
+            int timeout = Math.Max(5, cfg.CloseTimeout);
+            while (closing.Count > 0 && !cancel && (DateTime.Now - start).TotalSeconds < timeout)
             {
                 var now = Native.ListWindows();
+                double t = (DateTime.Now - start).TotalSeconds;
                 foreach (var a in closing.ToArray())
                 {
-                    if (!Engine.IsRunning(a)) { closing.Remove(a); S(a, "Closed"); L(a.Name + ": closed."); Up(a, E, a.Name + " closed"); continue; }
-                    // window gone but the program keeps running: it went to the tray instead of quitting
-                    if (!inTray.Contains(a) && (DateTime.Now - start).TotalSeconds > 1 && Engine.FindWindow(a, now) == null)
+                    if (!Engine.IsRunning(a))
                     {
-                        inTray.Add(a);
-                        S(a, "In tray");
-                        Up(a, 2, a.Name + " went to the tray — waiting…");
-                        int left = (int)Math.Ceiling(cfg.CloseTimeout - (DateTime.Now - start).TotalSeconds);
-                        L(a.Name + " went to the tray instead of closing" + (cfg.ForceClose ? " — FlightDeck will close it in " + Math.Max(1, left) + " s." : "."));
+                        closing.Remove(a); S(a, "Closed");
+                        L(a.Name + (told.ContainsKey(a) ? ": closed cleanly." : ": closed."));
+                        Up(a, E, a.Name + " closed");
+                        continue;
+                    }
+                    int n; told.TryGetValue(a, out n);
+                    // still running after the normal close (usually: it went to the tray instead of quitting).
+                    // Ask it the way Windows does at shutdown, so it saves and exits cleanly; once more later.
+                    if ((n == 0 && t > 1.5) || (n == 1 && t > 9))
+                    {
+                        told[a] = n + 1;
+                        if (n == 0)
+                        {
+                            bool tray = Engine.FindWindow(a, now) == null;
+                            if (tray) { inTray.Add(a); S(a, "In tray"); }
+                            Up(a, 2, a.Name + (tray ? " went to the tray — asking it to exit…" : " is still open — asking it to exit…"));
+                            L(a.Name + (tray ? " went to the tray instead of closing — asking it to exit properly." : " is still open — asking it to exit properly."));
+                        }
+                        int got = Native.AskToEndSession(Engine.Pids(a));
+                        D(a.Name + ": end-session request #" + (n + 1) + " sent to " + got + " window(s)");
                     }
                 }
-
                 if (closing.Count > 0) Thread.Sleep(400);
             }
 
-            if (closing.Count > 0) Up(null, 0, "Closing the apps that are still running…");
+            if (closing.Count > 0 && !cancel) Up(null, 0, "Some apps are still running…");
             foreach (var a in closing)
             {
-                if (!cfg.ForceClose) { S(a, "Running"); L(a.Name + ": still running (force close is off)."); continue; }
+                if (cancel) break;
+                if (!cfg.ForceClose) { S(a, "Running"); L(a.Name + ": still running (force close is off)."); Up(a, E, a.Name + " left open"); continue; }
+                if (sim != null && !cfg.ForceWhileSimRunning)
+                {
+                    // Killing an add-on that is connected to the simulator can crash the simulator.
+                    S(a, "Running");
+                    L(a.Name + ": still running after " + timeout + " s. Not forcing it closed while " + sim + " is open (that can crash the sim) — close it from its own window or tray icon.");
+                    Up(a, E, a.Name + " left open");
+                    continue;
+                }
                 bool denied = false;
                 foreach (var p in Process.GetProcessesByName(a.Process))
                 {
@@ -853,7 +942,7 @@ namespace FlightDeck
                     S(a, "Running");
                     L(a.Name + (denied ? ": could not close it — it runs as administrator. Turn on \"Run FlightDeck as administrator\" in Settings." : ": still running."));
                 }
-                else { S(a, "Closed"); L(a.Name + (inTray.Contains(a) ? ": closed from the tray." : ": closed (forced).")); }
+                else { S(a, "Closed"); L(a.Name + ": closed (forced)."); }
                 Up(a, E, a.Name + " closed");
             }
             foreach (var a in apps) units[a] = E;

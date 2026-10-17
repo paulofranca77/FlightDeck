@@ -15,7 +15,7 @@ namespace FlightDeck
         public readonly AppEntry App;
         readonly Panel body;
         readonly TextField fName, fPath, fArgs, fDelay, fProc, fTitle, fX, fY, fW, fH;
-        readonly Toggle tEnabled, tAdmin, tClose, tMax;
+        readonly Toggle tEnabled, tAdmin, tClose, tMax, tSim;
         readonly DarkCombo monitor;
         readonly LayoutMap map;
         readonly Label posState;
@@ -59,6 +59,12 @@ namespace FlightDeck
             tEnabled = ToggleWithLabel("Autorun with Start Flight", app.Enabled, pad, y);
             tAdmin = ToggleWithLabel("Run as administrator", app.Admin, pad + Theme.S(250), y);
             tClose = ToggleWithLabel("Close on End Flight", app.CloseOnEnd, pad + Theme.S(480), y);
+            y += Theme.S(40);
+            tSim = ToggleWithLabel("Wait for SimConnect", app.WaitForSim, pad, y);
+            var simHint = Theme.MakeLabel("Opens this app only when the simulator is ready for add-ons (during its main loading), not right away.", Theme.F9, Theme.Muted, Theme.Bg);
+            simHint.AutoSize = false;
+            simHint.SetBounds(pad + Theme.S(250), y - Theme.S(2), full - Theme.S(250), Theme.S(38));
+            body.Controls.Add(simHint);
             y += Theme.S(48);
 
             Divider(pad, y, full); y += Theme.S(18);
@@ -260,7 +266,7 @@ namespace FlightDeck
             if (App.Process.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) App.Process = App.Process.Substring(0, App.Process.Length - 4);
             App.Title = fTitle.Value.Trim();
             App.Delay = Math.Max(0, fDelay.DoubleValue(2));
-            App.Enabled = tEnabled.Checked; App.Admin = tAdmin.Checked; App.CloseOnEnd = tClose.Checked;
+            App.Enabled = tEnabled.Checked; App.Admin = tAdmin.Checked; App.CloseOnEnd = tClose.Checked; App.WaitForSim = tSim.Checked;
             App.HasPos = App.W > 0 && App.H > 0;
             DialogResult = DialogResult.OK;
             Close();
