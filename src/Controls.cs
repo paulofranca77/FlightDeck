@@ -947,7 +947,7 @@ namespace FlightDeck
     /// <summary>Thin animated progress bar with a status label (Activity card).</summary>
     class ProgressStrip : Owner
     {
-        float shown, target;
+        float shown, target, step;
         string label = "";
         bool problem;
         readonly Timer anim = new Timer { Interval = 16 };
@@ -958,8 +958,10 @@ namespace FlightDeck
             anim.Tick += (s, e) =>
             {
                 float d = target - shown;
-                if (Math.Abs(d) < 0.002f) { shown = target; anim.Stop(); }
-                else shown += d * 0.18f;
+                if (d > 0.002f) shown += d * 0.18f;                         // catch up with real progress
+                else if (target < 1f && shown < target + step * 0.85f)
+                    shown += step * 0.006f;                                 // drift forward while waiting on the next step
+                else if (target >= 1f) { shown = 1f; anim.Stop(); }
                 Invalidate();
             };
         }
@@ -970,12 +972,12 @@ namespace FlightDeck
         {
             float v = total <= 0 ? 0 : Math.Max(0, Math.Min(1, done / (float)total));
             if (v < target - 0.001f) shown = v;      // a new run: start from its own value
-            target = v; label = text ?? ""; problem = hasProblem;
+            target = v; step = total > 0 ? 1f / total : 0; label = text ?? ""; problem = hasProblem;
             anim.Start();
             Invalidate();
         }
 
-        public void Reset() { shown = target = 0; label = ""; problem = false; Invalidate(); }
+        public void Reset() { shown = target = step = 0; label = ""; problem = false; Invalidate(); }
 
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -990,7 +992,7 @@ namespace FlightDeck
                 var fill = new RectangleF(track.X, track.Y, Math.Max(barH, track.Width * shown), barH);
                 FillRound(fill, problem ? Theme.Orange : Theme.Accent);
             }
-            string pct = ((int)Math.Round(target * 100)) + "%";
+            string pct = ((int)Math.Floor(Math.Max(target, Math.Min(shown, 0.99f)) * 100)) + "%";
             TextRenderer.DrawText(g, label, Theme.F9, new Rectangle(0, 0, Width - Theme.S(50), Theme.S(18)), Theme.SubText,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
             TextRenderer.DrawText(g, pct, Theme.F9S, new Rectangle(Width - Theme.S(50), 0, Theme.S(50), Theme.S(18)), Theme.Muted,

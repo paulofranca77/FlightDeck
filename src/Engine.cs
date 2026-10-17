@@ -473,6 +473,25 @@ namespace FlightDeck
         public event Action<int, int, string> Progress; // done, total, label
         int lastDone = -1;
         void P(int done, int total, string label) { lastDone = done; var h = Progress; if (h != null) h(done, total, label); }
+
+        // Each app moves through small steps (opened → window found → each placement pass → ready),
+        // so the bar climbs a little with every action instead of waiting for whole apps.
+        Dictionary<AppEntry, int> units = new Dictionary<AppEntry, int>();
+        int unitsPerApp, extraUnits, extraDone;
+        void BeginUnits(IEnumerable<AppEntry> list, int perApp, int extra)
+        {
+            units = list.ToDictionary(a => a, a => 0);
+            unitsPerApp = perApp; extraUnits = extra; extraDone = 0;
+        }
+        int ReadyCount { get { return units.Count(kv => kv.Value >= unitsPerApp); } }
+        void Up(AppEntry a, int u, string label)
+        {
+            int cur;
+            if (a != null && units.TryGetValue(a, out cur)) units[a] = Math.Max(cur, Math.Min(u, unitsPerApp));
+            int done = units.Values.Sum() + extraDone, total = units.Count * unitsPerApp + extraUnits;
+            P(done, total, label);
+        }
+        void UpExtra(int step, string label) { extraDone = Math.Min(extraUnits, step); Up(null, 0, label); }
         public bool Busy { get; private set; }
         public int Problems { get; private set; }
         volatile bool cancel;
@@ -537,37 +556,45 @@ namespace FlightDeck
             L(positionOnly ? "Applying layout…" : "Starting flight…");
             bool elevated = Util.IsElevated();
             var jobs = new List<Job>();
+            const int U = 6;   // per app: opened, window found, 3 placement passes, ready
+            BeginUnits(apps, U, apps.Count > 1 ? 2 : 0);
+            Func<string> tally = () => " (" + ReadyCount + " of " + apps.Count + " ready)";
+            Up(null, 0, positionOnly ? "Looking for your windows…" : "Getting ready…");
 
             foreach (var a in apps)
             {
                 if (cancel) return;
+                Up(null, 0, (positionOnly ? "Looking for " : "Opening ") + a.Name + "…");
                 var w = Engine.FindWindow(a);
                 if (w == null && Engine.IsRunning(a))
                 {
                     // already running but no window on screen: it's parked in the tray
                     S(a, "Positioning");
                     jobs.Add(new Job { App = a, WasRunning = true, InTray = true, Launched = DateTime.Now.AddSeconds(-60) });
+                    Up(a, 1, a.Name + " is in the tray…");
                     continue;
                 }
                 if (w == null && !positionOnly)
                 {
-                    if (string.IsNullOrWhiteSpace(a.Path)) { L(a.Name + ": not running and no program path set — skipped."); S(a, "Skipped"); continue; }
+                    if (string.IsNullOrWhiteSpace(a.Path)) { L(a.Name + ": not running and no program path set — skipped."); S(a, "Skipped"); Up(a, U, a.Name + " skipped"); continue; }
                     try
                     {
                         Engine.Launch(a, elevated);
                         L("Launching " + a.Name + "…");
                         S(a, "Starting");
                     }
-                    catch (Exception ex) { L(a.Name + ": could not start (" + ex.Message + ")."); S(a, "Error"); continue; }
+                    catch (Exception ex) { L(a.Name + ": could not start (" + ex.Message + ")."); S(a, "Error"); Up(a, U, a.Name + " could not start"); continue; }
+                    Up(a, 1, "Opening " + a.Name + "…");
                     Thread.Sleep(400);
                 }
-                else if (w == null) { continue; }
-                else S(a, "Positioning");
+                else if (w == null) { Up(a, U, a.Name + " isn't open"); continue; }
+                else { S(a, "Positioning"); Up(a, 2, a.Name + " is already open"); }
                 jobs.Add(new Job { App = a, WasRunning = w != null });
             }
 
-            int nApps = apps.Count, totalSteps = nApps + (nApps > 1 ? 1 : 0);
-            P(nApps - jobs.Count, totalSteps, positionOnly ? "Placing windows…" : "Opening apps…");
+            int nApps = apps.Count;
+            var jobApps = jobs.Select(x => x.App).ToList();
+            Up(null, 0, "Waiting for the windows…" + tally());
             double[] launchedPasses = { 0, 3, 8 };      // apps we just started: they often move themselves while loading
             double[] runningPasses = { 0, 1.5, 4 };     // apps that were already open
             const double settleSeconds = 30;            // after the passes, keep checking for up to this long
@@ -631,7 +658,7 @@ namespace FlightDeck
                         if (j.Found == null && (DateTime.Now - start).TotalSeconds > cfg.LaunchTimeout) { jobs.Remove(j); NotFound(j); }
                         continue;
                     }
-                    if (j.Found == null) { j.Found = DateTime.Now; S(a, "Positioning"); D(a.Name + ": window found \"" + w.Title + "\" at " + Fr(w.Frame) + (w.Minimized ? " (minimized)" : w.Maximized ? " (maximized)" : "")); }
+                    if (j.Found == null) { j.Found = DateTime.Now; S(a, "Positioning"); Up(a, 2, a.Name + " is up" + tally()); D(a.Name + ": window found \"" + w.Title + "\" at " + Fr(w.Frame) + (w.Minimized ? " (minimized)" : w.Maximized ? " (maximized)" : "")); }
                     if (j.Handle != IntPtr.Zero && j.Handle != w.Handle)
                         D(a.Name + ": main window changed \"" + j.Title + "\" → \"" + w.Title + "\" (" + Fr(w.Frame) + ")");
                     j.Handle = w.Handle; j.Title = w.Title;
@@ -649,6 +676,7 @@ namespace FlightDeck
                         if (j.Passes == 0 && j.WasRunning) L(a.Name + " was already open — moving it to its saved position.");
                         PlaceJob(j, w);
                         j.Passes++;
+                        Up(a, 2 + j.Passes, "Placing " + a.Name + "…" + tally());
                         if (j.Refused) { jobs.Remove(j); S(a, AtTarget(w, a) ? "Ready" : "Needs admin"); }
                         continue;
                     }
@@ -675,7 +703,8 @@ namespace FlightDeck
                         PlaceJob(j, w);
                     }
                 }
-                if (nApps - jobs.Count != lastDone) P(nApps - jobs.Count, totalSteps, (nApps - jobs.Count) + " of " + nApps + " apps ready");
+                foreach (var fa in jobApps)
+                    if (units[fa] < U && !jobs.Any(x => x.App == fa)) Up(fa, U, fa.Name + " ready" + tally());
                 Thread.Sleep(400);
             }
             if (!cancel)
@@ -690,7 +719,8 @@ namespace FlightDeck
             {
                 // Final step, after the last (slowest) app was placed: set which window is in front.
                 var bs = BeforeStacking; if (bs != null) bs(positionOnly ? "apply" : "start");
-                P(nApps, totalSteps, "Setting the window order…");
+                foreach (var fa in apps) units[fa] = U;
+                UpExtra(1, "Setting the window order…");
                 Thread.Sleep(1500);
                 if (cancel) return;
                 ApplyStacking(apps, false);
@@ -699,7 +729,8 @@ namespace FlightDeck
                 ApplyStacking(apps, true);
                 L("Stacking order applied (front → back): " + string.Join(" › ", apps.Select(a => a.Name)));
             }
-            P(totalSteps, totalSteps, positionOnly ? "Layout applied" : "All set");
+            foreach (var fa in apps) units[fa] = U;
+            UpExtra(2, positionOnly ? "Layout applied" : "All set");
             L(positionOnly ? "Layout applied." : "Flight ready. Have a good one ✈");
         }
 
@@ -780,8 +811,9 @@ namespace FlightDeck
                 closing.Add(a);
             }
 
-            int nEnd = apps.Count;
-            P(nEnd - closing.Count, nEnd, "Closing apps…");
+            const int E = 3;   // per app: asked to close, (in tray), closed
+            BeginUnits(apps, E, 0);
+            foreach (var a in apps) Up(a, closing.Contains(a) ? 1 : E, closing.Contains(a) ? "Closing " + a.Name + "…" : a.Name + " was already closed");
             var start = DateTime.Now;
             var inTray = new HashSet<AppEntry>();
             while (closing.Count > 0 && (DateTime.Now - start).TotalSeconds < cfg.CloseTimeout)
@@ -789,21 +821,22 @@ namespace FlightDeck
                 var now = Native.ListWindows();
                 foreach (var a in closing.ToArray())
                 {
-                    if (!Engine.IsRunning(a)) { closing.Remove(a); S(a, "Closed"); L(a.Name + ": closed."); continue; }
+                    if (!Engine.IsRunning(a)) { closing.Remove(a); S(a, "Closed"); L(a.Name + ": closed."); Up(a, E, a.Name + " closed"); continue; }
                     // window gone but the program keeps running: it went to the tray instead of quitting
                     if (!inTray.Contains(a) && (DateTime.Now - start).TotalSeconds > 1 && Engine.FindWindow(a, now) == null)
                     {
                         inTray.Add(a);
                         S(a, "In tray");
+                        Up(a, 2, a.Name + " went to the tray — waiting…");
                         int left = (int)Math.Ceiling(cfg.CloseTimeout - (DateTime.Now - start).TotalSeconds);
                         L(a.Name + " went to the tray instead of closing" + (cfg.ForceClose ? " — FlightDeck will close it in " + Math.Max(1, left) + " s." : "."));
                     }
                 }
-                if (nEnd - closing.Count != lastDone) P(nEnd - closing.Count, nEnd, (nEnd - closing.Count) + " of " + nEnd + " apps closed");
+
                 if (closing.Count > 0) Thread.Sleep(400);
             }
 
-            if (closing.Count > 0) P(nEnd - closing.Count, nEnd, "Closing the apps that are still running…");
+            if (closing.Count > 0) Up(null, 0, "Closing the apps that are still running…");
             foreach (var a in closing)
             {
                 if (!cfg.ForceClose) { S(a, "Running"); L(a.Name + ": still running (force close is off)."); continue; }
@@ -820,8 +853,10 @@ namespace FlightDeck
                     L(a.Name + (denied ? ": could not close it — it runs as administrator. Turn on \"Run FlightDeck as administrator\" in Settings." : ": still running."));
                 }
                 else { S(a, "Closed"); L(a.Name + (inTray.Contains(a) ? ": closed from the tray." : ": closed (forced).")); }
+                Up(a, E, a.Name + " closed");
             }
-            P(nEnd, nEnd, "Flight ended");
+            foreach (var a in apps) units[a] = E;
+            Up(null, 0, "Flight ended");
             L("Flight ended.");
         }
     }
