@@ -196,7 +196,7 @@ namespace FlightDeck
             AddNav("Apps", Theme.Glyph.Apps, AppsPg);
             AddNav("Layout", Theme.Glyph.Monitor, LayoutPg);
             navSettings = AddNav("Settings", Theme.Glyph.Settings, SettingsPg);
-            version = Theme.MakeLabel("v2.2.2" + (Util.IsElevated() ? "  ·  administrator" : ""), Theme.F9, Theme.Faint, Theme.Sidebar);
+            version = Theme.MakeLabel("v2.2.3" + (Util.IsElevated() ? "  ·  administrator" : ""), Theme.F9, Theme.Faint, Theme.Sidebar);
             sidebar.Controls.Add(version);
             sidebar.Resize += (s, e) => LayoutSidebar();
             LayoutSidebar();
@@ -370,6 +370,7 @@ namespace FlightDeck
             Dash.SetBusy(true);
             ShowPage(Dash);
             UpdateTrayText();
+            Dash.ShowProgress(0, 1, "Getting ready…", false);   // visible right away, before the runner's first step
             Runner.StartFlight(flightProfile.Apps);
         }
 
@@ -415,6 +416,7 @@ namespace FlightDeck
             runKind = "end";
             Dash.SetBusy(true);
             ShowPage(Dash);
+            Dash.ShowProgress(0, 1, "Getting ready…", false);
             Runner.EndFlight((flightProfile ?? Cfg.Active).Apps);
         }
 
@@ -423,6 +425,7 @@ namespace FlightDeck
             if (Runner.Busy) return;
             runKind = "apply";
             Dash.SetBusy(true);
+            Dash.ShowProgress(0, 1, "Looking for your windows…", false);
             Runner.StartFlight((InFlight && flightProfile != null ? flightProfile : Cfg.Active).Apps, true);
         }
 

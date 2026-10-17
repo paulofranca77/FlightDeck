@@ -556,7 +556,7 @@ namespace FlightDeck
             L(positionOnly ? "Applying layout…" : "Starting flight…");
             bool elevated = Util.IsElevated();
             var jobs = new List<Job>();
-            const int U = 6;   // per app: opened, window found, 3 placement passes, ready
+            const int U = 8;   // per app: launching, opened (3), window found (4), placement passes (5-7), ready (8)
             BeginUnits(apps, U, apps.Count > 1 ? 2 : 0);
             Func<string> tally = () => " (" + ReadyCount + " of " + apps.Count + " ready)";
             Up(null, 0, positionOnly ? "Looking for your windows…" : "Getting ready…");
@@ -571,12 +571,13 @@ namespace FlightDeck
                     // already running but no window on screen: it's parked in the tray
                     S(a, "Positioning");
                     jobs.Add(new Job { App = a, WasRunning = true, InTray = true, Launched = DateTime.Now.AddSeconds(-60) });
-                    Up(a, 1, a.Name + " is in the tray…");
+                    Up(a, 3, a.Name + " is in the tray…");
                     continue;
                 }
                 if (w == null && !positionOnly)
                 {
                     if (string.IsNullOrWhiteSpace(a.Path)) { L(a.Name + ": not running and no program path set — skipped."); S(a, "Skipped"); Up(a, U, a.Name + " skipped"); continue; }
+                    Up(a, 1, "Opening " + a.Name + "…");
                     try
                     {
                         Engine.Launch(a, elevated);
@@ -584,11 +585,11 @@ namespace FlightDeck
                         S(a, "Starting");
                     }
                     catch (Exception ex) { L(a.Name + ": could not start (" + ex.Message + ")."); S(a, "Error"); Up(a, U, a.Name + " could not start"); continue; }
-                    Up(a, 1, "Opening " + a.Name + "…");
+                    Up(a, 3, a.Name + " opened");
                     Thread.Sleep(400);
                 }
                 else if (w == null) { Up(a, U, a.Name + " isn't open"); continue; }
-                else { S(a, "Positioning"); Up(a, 2, a.Name + " is already open"); }
+                else { S(a, "Positioning"); Up(a, 4, a.Name + " is already open"); }
                 jobs.Add(new Job { App = a, WasRunning = w != null });
             }
 
@@ -658,7 +659,7 @@ namespace FlightDeck
                         if (j.Found == null && (DateTime.Now - start).TotalSeconds > cfg.LaunchTimeout) { jobs.Remove(j); NotFound(j); }
                         continue;
                     }
-                    if (j.Found == null) { j.Found = DateTime.Now; S(a, "Positioning"); Up(a, 2, a.Name + " is up" + tally()); D(a.Name + ": window found \"" + w.Title + "\" at " + Fr(w.Frame) + (w.Minimized ? " (minimized)" : w.Maximized ? " (maximized)" : "")); }
+                    if (j.Found == null) { j.Found = DateTime.Now; S(a, "Positioning"); Up(a, 4, a.Name + " is up" + tally()); D(a.Name + ": window found \"" + w.Title + "\" at " + Fr(w.Frame) + (w.Minimized ? " (minimized)" : w.Maximized ? " (maximized)" : "")); }
                     if (j.Handle != IntPtr.Zero && j.Handle != w.Handle)
                         D(a.Name + ": main window changed \"" + j.Title + "\" → \"" + w.Title + "\" (" + Fr(w.Frame) + ")");
                     j.Handle = w.Handle; j.Title = w.Title;
@@ -676,7 +677,7 @@ namespace FlightDeck
                         if (j.Passes == 0 && j.WasRunning) L(a.Name + " was already open — moving it to its saved position.");
                         PlaceJob(j, w);
                         j.Passes++;
-                        Up(a, 2 + j.Passes, "Placing " + a.Name + "…" + tally());
+                        Up(a, 4 + Math.Min(3, j.Passes), "Placing " + a.Name + "…" + tally());
                         if (j.Refused) { jobs.Remove(j); S(a, AtTarget(w, a) ? "Ready" : "Needs admin"); }
                         continue;
                     }

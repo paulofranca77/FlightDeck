@@ -4,6 +4,11 @@ FlightDeck was built over a few days in October 2026 through a conversation betw
 (who tested every build on his own setup) and Claude, the AI that wrote the code. These are the steps it went
 through. Only v2.0 is published as a download; the earlier builds were private test versions.
 
+## v2.2.3
+- Progress bar shows the moment you click Start Flight / End Flight / Re-apply layout, and climbs as each
+  app opens (opening now counts for a bigger share of the bar).
+- The window no longer stalls while apps launch: the "running" check for the tiles now happens in the background.
+
 ## v2.2.2
 - Smoother progress bar: it climbs with every action (opening each app, window found, each placement pass,
   closing each app) instead of jumping per finished app, and keeps drifting gently while waiting.

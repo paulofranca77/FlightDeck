@@ -118,7 +118,7 @@ namespace FlightDeck
             Controls.Add(logCard);
 
             poll = new Timer { Interval = 2000 };
-            poll.Tick += (s, e) => { if (Visible) RefreshStatus(); };
+            poll.Tick += (s, e) => { if (Visible) ScanProcesses(); };
             poll.Start();
         }
 
@@ -141,7 +141,25 @@ namespace FlightDeck
             hideProgress.Stop();
             if (!progress.Visible) { progress.Reset(); progress.Visible = true; PerformLayout(); }
             progress.Set(done, total, label, problem);
+            progress.Update();      // paint now, even while the window is busy with other messages
             if (total > 0 && done >= total) hideProgress.Start();   // keep the full bar a moment, then tidy up
+        }
+
+        // Which programs are running, read on a background thread so the window never waits on it.
+        HashSet<string> running = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        volatile bool scanning;
+        void ScanProcesses()
+        {
+            if (scanning) return;
+            scanning = true;
+            System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+            {
+                var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                try { foreach (var p in System.Diagnostics.Process.GetProcesses()) { try { set.Add(p.ProcessName); } catch { } p.Dispose(); } }
+                catch { }
+                try { BeginInvoke((Action)(() => { running = set; scanning = false; RefreshStatus(); })); }
+                catch { scanning = false; }
+            });
         }
 
         public void AddLine(string line)
@@ -177,13 +195,22 @@ namespace FlightDeck
             PerformLayout();
         }
 
+        bool IsRunningCached(AppEntry a)
+        {
+            if (string.IsNullOrWhiteSpace(a.Process)) return false;
+            string n = a.Process.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? a.Process.Substring(0, a.Process.Length - 4) : a.Process;
+            return running.Contains(n);
+        }
+
+        protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); ScanProcesses(); }
+
         public void RefreshStatus()
         {
             foreach (var t in tileList)
             {
                 string st;
                 if (!Host.Live.TryGetValue(t.App.Id, out st))
-                    st = !t.App.HasPos ? "No position yet" : Engine.IsRunning(t.App) ? "Running" : "Not running";
+                    st = !t.App.HasPos ? "No position yet" : IsRunningCached(t.App) ? "Running" : "Not running";
                 t.SetStatus(st);
             }
         }
