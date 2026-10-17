@@ -196,7 +196,7 @@ namespace FlightDeck
             AddNav("Apps", Theme.Glyph.Apps, AppsPg);
             AddNav("Layout", Theme.Glyph.Monitor, LayoutPg);
             navSettings = AddNav("Settings", Theme.Glyph.Settings, SettingsPg);
-            version = Theme.MakeLabel("v2.2" + (Util.IsElevated() ? "  ·  administrator" : ""), Theme.F9, Theme.Faint, Theme.Sidebar);
+            version = Theme.MakeLabel("v2.2.1" + (Util.IsElevated() ? "  ·  administrator" : ""), Theme.F9, Theme.Faint, Theme.Sidebar);
             sidebar.Controls.Add(version);
             sidebar.Resize += (s, e) => LayoutSidebar();
             LayoutSidebar();
@@ -221,8 +221,28 @@ namespace FlightDeck
                 try { Icon = Theme.AppIcon() ?? Icon; } catch { }
                 try { var old = tray.Icon; tray.Icon = Theme.MakeLogoIcon(SystemInformation.SmallIconSize.Width); } catch { }
                 Log("Accent colour: #" + Theme.ToHex(c));
-                new System.Threading.Thread(() => { try { Util.WriteShortcutIcons(); Util.RefreshDesktopShortcuts(); } catch { } }) { IsBackground = true }.Start();
+                UpdateShortcutIcons(true);
             }));
+        }
+
+        /// <summary>Redraws the icon files and re-points FlightDeck's shortcuts (desktop, Start, taskbar) at them.</summary>
+        void UpdateShortcutIcons(bool report)
+        {
+            string key = Theme.ToHex(Theme.BaseAccent) + "|" + Application.ExecutablePath;
+            new System.Threading.Thread(() =>
+            {
+                try
+                {
+                    Util.WriteShortcutIcons();
+                    int n = Util.RefreshDesktopShortcuts();
+                    Ui(() =>
+                    {
+                        Cfg.ShortcutIconsFor = key; Save();
+                        if (report && n > 0) Log("Updated " + n + " FlightDeck shortcut" + (n == 1 ? "" : "s") + " (desktop, Start menu, taskbar) to the new colour.");
+                    });
+                }
+                catch { }
+            }) { IsBackground = true }.Start();
         }
 
         void DoSetTheme(bool light)
@@ -777,6 +797,8 @@ namespace FlightDeck
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
+            if (Cfg.AccentColor != null && Cfg.ShortcutIconsFor != Theme.ToHex(Theme.BaseAccent) + "|" + Application.ExecutablePath)
+                UpdateShortcutIcons(false);   // e.g. pinned to Start/taskbar after the colour was chosen, or the exe moved
             string ver = Application.ProductVersion;
             if (Cfg.IconRefreshVersion != ver)
             {

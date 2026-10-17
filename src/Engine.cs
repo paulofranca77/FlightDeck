@@ -88,6 +88,7 @@ namespace FlightDeck
         public string ElevatedTaskPath { get; set; }
         public bool SkipAdminPrompt { get; set; }
         public string AccentColor { get; set; }
+        public string ShortcutIconsFor { get; set; }
 
         public Config()
         {
@@ -310,31 +311,62 @@ namespace FlightDeck
             Theme.SaveFlightIcon(IconPath("--end"), false);
         }
 
-        /// <summary>Re-points FlightDeck's desktop shortcuts at the freshly drawn icons.</summary>
-        public static void RefreshDesktopShortcuts()
+        /// <summary>
+        /// Re-points every shortcut to FlightDeck at the icons in the current accent colour: Desktop,
+        /// Start menu (incl. "pinned to Start") and the taskbar pins — Windows draws pinned apps from these .lnk files.
+        /// </summary>
+        public static int RefreshDesktopShortcuts()
         {
-            var lnks = new List<string>();
-            try
+            string exe = Application.ExecutablePath;
+            string roaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            var folders = new List<KeyValuePair<string, bool>>   // folder, recursive
             {
-                string desk = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-                foreach (var pair in new[] { new[] { "FlightDeck.lnk", "" }, new[] { "Start Flight.lnk", "--start" }, new[] { "End Flight.lnk", "--end" } })
+                new KeyValuePair<string, bool>(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), false),
+                new KeyValuePair<string, bool>(Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory), false),
+                new KeyValuePair<string, bool>(Environment.GetFolderPath(Environment.SpecialFolder.Programs), true),
+                new KeyValuePair<string, bool>(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms), true),
+                new KeyValuePair<string, bool>(System.IO.Path.Combine(roaming, @"Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"), false),
+                new KeyValuePair<string, bool>(System.IO.Path.Combine(roaming, @"Microsoft\Internet Explorer\Quick Launch\User Pinned\StartMenu"), false),
+                new KeyValuePair<string, bool>(System.IO.Path.Combine(roaming, @"Microsoft\Internet Explorer\Quick Launch"), false),
+            };
+            var touched = new List<string>();
+            object sh = null; Type t = null;
+            try { t = Type.GetTypeFromProgID("WScript.Shell"); sh = Activator.CreateInstance(t); } catch { return 0; }
+            foreach (var f in folders)
+            {
+                if (string.IsNullOrEmpty(f.Key) || !System.IO.Directory.Exists(f.Key)) continue;
+                string[] files;
+                try { files = System.IO.Directory.GetFiles(f.Key, "*.lnk", f.Value ? System.IO.SearchOption.AllDirectories : System.IO.SearchOption.TopDirectoryOnly); }
+                catch { continue; }
+                foreach (var p in files)
                 {
-                    string p = System.IO.Path.Combine(desk, pair[0]);
-                    if (!System.IO.File.Exists(p)) continue;
-                    var t = Type.GetTypeFromProgID("WScript.Shell");
-                    object sh = Activator.CreateInstance(t);
-                    object lnk = t.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, sh, new object[] { p });
-                    var lt = lnk.GetType();
-                    string target = (string)lt.InvokeMember("TargetPath", BindingFlags.GetProperty, null, lnk, null) ?? "";
-                    if (!target.Equals(Application.ExecutablePath, StringComparison.OrdinalIgnoreCase)) continue;   // not ours
-                    lt.InvokeMember("IconLocation", BindingFlags.SetProperty, null, lnk, new object[] { IconPath(pair[1]) + ",0" });
-                    lt.InvokeMember("Save", BindingFlags.InvokeMethod, null, lnk, null);
-                    lnks.Add(p);
+                    try
+                    {
+                        object lnk = t.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, sh, new object[] { p });
+                        var lt = lnk.GetType();
+                        string target = (string)lt.InvokeMember("TargetPath", BindingFlags.GetProperty, null, lnk, null) ?? "";
+                        if (!target.Equals(exe, StringComparison.OrdinalIgnoreCase)) continue;   // not a FlightDeck shortcut
+                        string args = ((string)lt.InvokeMember("Arguments", BindingFlags.GetProperty, null, lnk, null) ?? "").Trim();
+                        string kind = args.IndexOf("--start", StringComparison.OrdinalIgnoreCase) >= 0 ? "--start"
+                                    : args.IndexOf("--end", StringComparison.OrdinalIgnoreCase) >= 0 ? "--end" : "";
+                        lt.InvokeMember("IconLocation", BindingFlags.SetProperty, null, lnk, new object[] { IconPath(kind) + ",0" });
+                        lt.InvokeMember("Save", BindingFlags.InvokeMethod, null, lnk, null);
+                        touched.Add(p);
+                    }
+                    catch { }
                 }
             }
+            var refresh = new List<string>(touched) { IconPath(""), IconPath("--start"), IconPath("--end") };
+            Native.RefreshShellIcons(refresh);
+            // ask Explorer to redraw cached icons (taskbar, Start)
+            try
+            {
+                var ie = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "ie4uinit.exe");
+                if (System.IO.File.Exists(ie))
+                    using (var pr = Process.Start(new ProcessStartInfo(ie, "-show") { UseShellExecute = false, CreateNoWindow = true })) { pr.WaitForExit(5000); }
+            }
             catch { }
-            lnks.AddRange(new[] { IconPath(""), IconPath("--start"), IconPath("--end") });
-            Native.RefreshShellIcons(lnks);
+            return touched.Count;
         }
 
         public static void CreateShortcut(string lnkPath, string args, string description, string iconPath)
