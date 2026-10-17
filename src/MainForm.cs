@@ -196,7 +196,7 @@ namespace FlightDeck
             AddNav("Apps", Theme.Glyph.Apps, AppsPg);
             AddNav("Layout", Theme.Glyph.Monitor, LayoutPg);
             navSettings = AddNav("Settings", Theme.Glyph.Settings, SettingsPg);
-            version = Theme.MakeLabel("v2.1" + (Util.IsElevated() ? "  ·  administrator" : ""), Theme.F9, Theme.Faint, Theme.Sidebar);
+            version = Theme.MakeLabel("v2.2" + (Util.IsElevated() ? "  ·  administrator" : ""), Theme.F9, Theme.Faint, Theme.Sidebar);
             sidebar.Controls.Add(version);
             sidebar.Resize += (s, e) => LayoutSidebar();
             LayoutSidebar();
@@ -209,12 +209,33 @@ namespace FlightDeck
             BeginInvoke(new Action(() => DoSetTheme(light)));
         }
 
+        /// <summary>Changes the accent colour everywhere: UI, window/tray icons and desktop shortcuts.</summary>
+        public void SetAccent(Color c)
+        {
+            BeginInvoke(new Action(() =>
+            {
+                Cfg.AccentColor = c.ToArgb() == Theme.DefaultAccent.ToArgb() ? null : Theme.ToHex(c);
+                Theme.BaseAccent = c;
+                Save();
+                RebuildTheme();
+                try { Icon = Theme.AppIcon() ?? Icon; } catch { }
+                try { var old = tray.Icon; tray.Icon = Theme.MakeLogoIcon(SystemInformation.SmallIconSize.Width); } catch { }
+                Log("Accent colour: #" + Theme.ToHex(c));
+                new System.Threading.Thread(() => { try { Util.WriteShortcutIcons(); Util.RefreshDesktopShortcuts(); } catch { } }) { IsBackground = true }.Start();
+            }));
+        }
+
         void DoSetTheme(bool light)
         {
             if (light == Cfg.LightMode && Theme.IsDark == !light) return;
             Cfg.LightMode = light;
             Save();
-            Theme.Apply(!light);
+            RebuildTheme();
+        }
+
+        void RebuildTheme()
+        {
+            Theme.Apply(!Cfg.LightMode);
             SuspendLayout();
             var oldContent = content; var oldSidebar = sidebar;
             Controls.Remove(oldContent); Controls.Remove(oldSidebar);

@@ -87,6 +87,7 @@ namespace FlightDeck
         public string IconRefreshVersion { get; set; }
         public string ElevatedTaskPath { get; set; }
         public bool SkipAdminPrompt { get; set; }
+        public string AccentColor { get; set; }
 
         public Config()
         {
@@ -294,6 +295,47 @@ namespace FlightDeck
         }
 
         public static void CreateShortcut(string lnkPath, string args, string description) { CreateShortcut(lnkPath, args, description, null); }
+
+        /// <summary>Icon files that follow the accent colour (AppData\FlightDeck\icons).</summary>
+        public static string IconPath(string args)
+        {
+            string name = args == "--start" ? "start-flight.ico" : args == "--end" ? "end-flight.ico" : "flightdeck.ico";
+            return System.IO.Path.Combine(ConfigStore.Folder, "icons", name);
+        }
+
+        public static void WriteShortcutIcons()
+        {
+            Theme.SaveLogoIcon(IconPath(""));
+            Theme.SaveFlightIcon(IconPath("--start"), true);
+            Theme.SaveFlightIcon(IconPath("--end"), false);
+        }
+
+        /// <summary>Re-points FlightDeck's desktop shortcuts at the freshly drawn icons.</summary>
+        public static void RefreshDesktopShortcuts()
+        {
+            var lnks = new List<string>();
+            try
+            {
+                string desk = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+                foreach (var pair in new[] { new[] { "FlightDeck.lnk", "" }, new[] { "Start Flight.lnk", "--start" }, new[] { "End Flight.lnk", "--end" } })
+                {
+                    string p = System.IO.Path.Combine(desk, pair[0]);
+                    if (!System.IO.File.Exists(p)) continue;
+                    var t = Type.GetTypeFromProgID("WScript.Shell");
+                    object sh = Activator.CreateInstance(t);
+                    object lnk = t.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, sh, new object[] { p });
+                    var lt = lnk.GetType();
+                    string target = (string)lt.InvokeMember("TargetPath", BindingFlags.GetProperty, null, lnk, null) ?? "";
+                    if (!target.Equals(Application.ExecutablePath, StringComparison.OrdinalIgnoreCase)) continue;   // not ours
+                    lt.InvokeMember("IconLocation", BindingFlags.SetProperty, null, lnk, new object[] { IconPath(pair[1]) + ",0" });
+                    lt.InvokeMember("Save", BindingFlags.InvokeMethod, null, lnk, null);
+                    lnks.Add(p);
+                }
+            }
+            catch { }
+            lnks.AddRange(new[] { IconPath(""), IconPath("--start"), IconPath("--end") });
+            Native.RefreshShellIcons(lnks);
+        }
 
         public static void CreateShortcut(string lnkPath, string args, string description, string iconPath)
         {

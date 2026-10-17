@@ -28,7 +28,7 @@ everything again when you land. It works with any Windows program, not just sim 
 - **Capture windows**, **drag & drop** an .exe or shortcut, **Grab position**, per-app **Wait**, and a **Position** button for apps reopened mid-flight.
 - **Tray-aware** — apps that start minimized to the tray are brought out automatically.
 - **Administrator apps** — supported; FlightDeck asks Windows once, then starts elevated without prompting again.
-- **Profiles**, layout map of your monitors, Dark/Light themes, system-tray mode, Start/End Flight desktop shortcuts, built-in log & diagnostics.
+- **Profiles**, layout map of your monitors, Dark/Light themes with your own accent colour, system-tray mode, Start/End Flight desktop shortcuts, built-in log & diagnostics.
 
 ## Download
 

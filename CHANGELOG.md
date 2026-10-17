@@ -4,6 +4,12 @@ FlightDeck was built over a few days in October 2026 through a conversation betw
 (who tested every build on his own setup) and Claude, the AI that wrote the code. These are the steps it went
 through. Only v2.0 is published as a download; the earlier builds were private test versions.
 
+## v2.2
+- Choose your own accent colour (Settings → Accent colour): 8 presets or any colour with the picker.
+  Buttons, highlights, logo, window and tray icons and the desktop shortcuts all follow it;
+  text on and in the accent colour adjusts automatically to stay readable in Dark and Light.
+- Settings page scrolls on small windows / high DPI.
+
 ## v2.1
 - Progress bar under "Activity" during Start Flight, End Flight and Apply layout
   ("3 of 7 apps ready", "Setting the window order…", turns orange if an app needs attention).

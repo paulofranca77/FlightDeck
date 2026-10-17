@@ -475,6 +475,7 @@ namespace FlightDeck
 
         public SettingsPage(MainForm host) : base(host, "Settings", "How FlightDeck starts and ends your flights.")
         {
+            AutoScroll = true;   // small windows / high DPI: the settings scroll instead of being cut off
             card = new Card();
             Controls.Add(card);
             var cfg = Host.Cfg;
@@ -483,6 +484,10 @@ namespace FlightDeck
             look.SetSilently(cfg.LightMode ? 1 : 0);
             look.SelectedChanged += (s, e) => Host.SetTheme(look.Selected == 1);
             AddRow("Appearance", "Dark, or Light with soft off-white tones that are easy on the eyes.", look);
+
+            var accent = new AccentPicker(Theme.BaseAccent);
+            accent.Picked += c => Host.SetAccent(c);
+            AddRow("Accent colour", "Buttons, highlights, the logo, the tray icon and your desktop shortcuts.", accent);
 
             var launch = new TextField(cfg.LaunchTimeout.ToString()) { Width = Theme.S(90) };
             launch.ValueChanged += (s, e) => { int v = launch.IntValue(0); if (v >= 10) { cfg.LaunchTimeout = v; Host.Save(); } };
@@ -541,13 +546,8 @@ namespace FlightDeck
                 try
                 {
                     string p = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), file);
-                    string icon = null;
-                    if (args == "--start" || args == "--end")
-                    {
-                        icon = Path.Combine(ConfigStore.Folder, "icons", args == "--start" ? "start-flight.ico" : "end-flight.ico");
-                        Theme.SaveFlightIcon(icon, args == "--start");
-                    }
-                    Util.CreateShortcut(p, args, desc, icon);
+                    Util.WriteShortcutIcons();
+                    Util.CreateShortcut(p, args, desc, Util.IconPath(args));
                     Native.RefreshShellIcons(new[] { p });
                     MessageBox.Show(this, "Created \"" + Path.GetFileNameWithoutExtension(file) + "\" on your Desktop.", "FlightDeck", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
@@ -568,21 +568,23 @@ namespace FlightDeck
         protected override void LayoutBody(Rectangle r)
         {
             if (card == null || card2 == null || filesTitle == null || filesDesc == null || buttons == null) return;
-            int pad = Theme.S(22), rowH = Theme.S(70);
-            card.SetBounds(r.X, r.Y, r.Width, settingRows.Count * rowH + Theme.S(8));
+            int pad = Theme.S(22), rowH = Theme.S(64), oy = AutoScrollPosition.Y;
+            card.SetBounds(r.X, r.Y + oy, r.Width, settingRows.Count * rowH + Theme.S(8));
             for (int i = 0; i < settingRows.Count; i++)
             {
                 int y = Theme.S(4) + i * rowH;
                 var c = settingRows[i];
-                c[0].Location = new Point(pad, y + Theme.S(13));
+                c[0].Location = new Point(pad, y + Theme.S(11));
                 c[2].Location = new Point(r.Width - pad - c[2].Width, y + (rowH - c[2].Height) / 2);
-                c[1].SetBounds(pad, y + Theme.S(38), c[2].Left - pad - Theme.S(30), Theme.S(28));
+                c[1].SetBounds(pad, y + Theme.S(35), c[2].Left - pad - Theme.S(30), Theme.S(24));
             }
             int y2 = card.Bottom + Theme.S(16);
-            card2.SetBounds(r.X, y2, r.Width, Theme.S(200));
+            card2.SetBounds(r.X, y2, r.Width, Theme.S(180));
             filesTitle.Location = new Point(pad, Theme.S(18));
             filesDesc.SetBounds(pad, Theme.S(46), r.Width - 2 * pad, Theme.S(22));
-            buttons.SetBounds(pad, Theme.S(80), r.Width - 2 * pad, Theme.S(110));
+            buttons.SetBounds(pad, Theme.S(76), r.Width - 2 * pad, Theme.S(100));
+            var need = new Size(0, card2.Bottom - oy + Theme.S(24));
+            if (AutoScrollMinSize != need) AutoScrollMinSize = need;
         }
 
         protected override void OnPaint(PaintEventArgs e) { base.OnPaint(e); }

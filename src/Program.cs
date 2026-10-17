@@ -9,8 +9,8 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("FlightDeck")]
 [assembly: AssemblyProduct("FlightDeck")]
 [assembly: AssemblyDescription("Opens, arranges and closes your flight sim companion apps")]
-[assembly: AssemblyVersion("2.1.0.0")]
-[assembly: AssemblyFileVersion("2.1.0.0")]
+[assembly: AssemblyVersion("2.2.0.0")]
+[assembly: AssemblyFileVersion("2.2.0.0")]
 
 namespace FlightDeck
 {
@@ -82,6 +82,8 @@ namespace FlightDeck
             try
             {
                 using (var g = Graphics.FromHwnd(IntPtr.Zero)) Theme.Scale = Math.Max(1f, g.DpiX / 96f);
+                Color accent;
+                Theme.BaseAccent = Theme.TryHex(cfg.AccentColor, out accent) ? accent : Theme.DefaultAccent;
                 Theme.Apply(!cfg.LightMode);
                 try { Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.Normal; } catch { }   // apps we start inherit it
                 Application.Run(new MainForm(cfg, argList.ToArray()));

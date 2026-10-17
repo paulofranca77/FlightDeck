@@ -24,18 +24,66 @@ namespace FlightDeck
 
         static Theme() { Apply(true); }
 
+        public static readonly Color DefaultAccent = Color.FromArgb(0x9F, 0xCC, 0x2E);
+        public static Color BaseAccent = DefaultAccent;
+
+        // ---- color math ----
+        static double Lum(Color c)
+        {
+            Func<int, double> f = v => { double x = v / 255.0; return x <= 0.03928 ? x / 12.92 : Math.Pow((x + 0.055) / 1.055, 2.4); };
+            return 0.2126 * f(c.R) + 0.7152 * f(c.G) + 0.0722 * f(c.B);
+        }
+        public static double Contrast(Color a, Color b)
+        {
+            double x = Lum(a), y = Lum(b);
+            return (Math.Max(x, y) + 0.05) / (Math.Min(x, y) + 0.05);
+        }
+        public static Color Mix(Color a, Color b, double t)   // t = share of b
+        {
+            t = Math.Max(0, Math.Min(1, t));
+            return Color.FromArgb((int)Math.Round(a.R + (b.R - a.R) * t), (int)Math.Round(a.G + (b.G - a.G) * t), (int)Math.Round(a.B + (b.B - a.B) * t));
+        }
+        /// <summary>Moves c toward white or black until it reaches the contrast ratio against bg.</summary>
+        static Color Readable(Color c, Color bg, double ratio)
+        {
+            if (Contrast(c, bg) >= ratio) return c;
+            Color target = Lum(bg) < 0.4 ? Color.White : Color.Black;
+            for (double t = 0.05; t <= 1.0; t += 0.05)
+            {
+                var m = Mix(c, target, t);
+                if (Contrast(m, bg) >= ratio) return m;
+            }
+            return target;
+        }
+        public static string ToHex(Color c) { return c.R.ToString("X2") + c.G.ToString("X2") + c.B.ToString("X2"); }
+        public static bool TryHex(string s, out Color c)
+        {
+            c = Color.Empty;
+            s = (s ?? "").Trim().TrimStart('#');
+            if (s.Length == 3) s = "" + s[0] + s[0] + s[1] + s[1] + s[2] + s[2];
+            int v;
+            if (s.Length != 6 || !int.TryParse(s, System.Globalization.NumberStyles.HexNumber, null, out v)) return false;
+            c = Color.FromArgb((v >> 16) & 255, (v >> 8) & 255, v & 255);
+            return true;
+        }
+
         public static void Apply(bool dark)
         {
             IsDark = dark;
-            Accent = Hex("9FCC2E"); AccentHover = Hex("B1D852"); AccentPressed = Hex("8DB725"); AccentText = Hex("141A06");
+            var a = BaseAccent;
+            Accent = a;
+            AccentHover = Mix(a, Color.White, 0.18);
+            AccentPressed = Mix(a, Color.Black, 0.12);
+            // text drawn ON the accent: a very dark tint of it, or white — whichever reads better
+            var darkInk = Mix(a, Color.Black, 0.88);
+            AccentText = Contrast(darkInk, a) >= Contrast(Color.White, a) ? darkInk : Color.White;
             if (dark)
             {
                 Sidebar = Hex("0D0E10"); Bg = Hex("131417"); Card = Hex("18191D"); CardBorder = Hex("26272D");
                 Raised = Hex("1E1F24"); Hover = Hex("212228"); Selected = Hex("23242A");
                 Input = Hex("0F1013"); InputBorder = Hex("2D2E35");
                 Text = Hex("F1F1F3"); SubText = Hex("C6C8CE"); Muted = Hex("8A8C94"); Faint = Hex("6E7079");
-                AccentDisabled = Hex("4A5A22"); AccentInk = Hex("A8D33B");
-                Green = Hex("9FCC2E"); Red = Hex("E5484D"); Orange = Hex("F2A23A");
+                Green = Hex("4CC38A"); Red = Hex("E5484D"); Orange = Hex("F2A23A");
                 ButtonHover = Hex("26272D"); ButtonPressed = Hex("2A2B31");
                 DangerHoverFill = Hex("2A1A1C"); DangerHoverText = Hex("FF8A8D");
                 ToggleOff = Hex("2C2D33"); ToggleOffHover = Hex("34353C"); KnobOff = Hex("9A9CA4");
@@ -49,8 +97,7 @@ namespace FlightDeck
                 Raised = Hex("F1EFE9"); Hover = Hex("ECE9E2"); Selected = Hex("E3E0D6");
                 Input = Hex("FFFFFF"); InputBorder = Hex("D3CEC3");
                 Text = Hex("1D1F1A"); SubText = Hex("3B3E37"); Muted = Hex("62655D"); Faint = Hex("7A7D74");
-                AccentDisabled = Hex("D3E3A6"); AccentInk = Hex("4F730C");
-                Green = Hex("5F8F12"); Red = Hex("C2343A"); Orange = Hex("A85D00");
+                Green = Hex("2F8A57"); Red = Hex("C2343A"); Orange = Hex("A85D00");
                 ButtonHover = Hex("E9E6DE"); ButtonPressed = Hex("E1DDD3");
                 DangerHoverFill = Hex("FBE8E7"); DangerHoverText = Hex("B4232A");
                 ToggleOff = Hex("CFCAC0"); ToggleOffHover = Hex("C2BDB2"); KnobOff = Hex("FFFFFF");
@@ -58,6 +105,8 @@ namespace FlightDeck
                 SidebarLine = Hex("DDD9CF"); HeaderLine = Hex("E3DFD6");
                 MonitorFill = Hex("F0EDE6"); MonitorBorder = Hex("BEB9AD");
             }
+            AccentDisabled = Mix(a, Bg, 0.6);
+            AccentInk = Readable(a, Card, 4.5);      // accent-coloured text/icons on cards stay legible
         }
 
         static readonly Color[] tilePalette = { Hex("2F6FE0"), Hex("12808F"), Hex("1E8A57"), Hex("6B4BD6"), Hex("CF7426"), Hex("BC3F78"), Hex("3E4350"), Hex("8A6D1C") };
@@ -201,48 +250,80 @@ namespace FlightDeck
             }
         }
 
-        /// <summary>Writes a multi-size .ico: green tile with a plane taking off (or landing) — for the shortcuts.</summary>
-        public static void SaveFlightIcon(string path, bool takeoff)
+        static readonly int[] IcoSizes = { 16, 20, 24, 32, 40, 48, 64, 128, 256 };
+
+        /// <summary>Builds a multi-size .ico (PNG entries) from a painter.</summary>
+        static byte[] BuildIco(Action<Graphics, int> paint)
         {
-            int[] sizes = { 16, 20, 24, 32, 40, 48, 64, 128, 256 };
             var images = new System.Collections.Generic.List<byte[]>();
             float oldScale = Scale; Scale = 1f;
             try
             {
-                foreach (int s in sizes)
+                foreach (int s in IcoSizes)
                     using (var bmp = new Bitmap(s, s, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
                     {
                         using (var g = Graphics.FromImage(bmp))
                         {
                             g.Clear(Color.Transparent);
                             g.SmoothingMode = SmoothingMode.AntiAlias;
-                            float m = s <= 20 ? 0.5f : s * 0.04f;
-                            var tile = new RectangleF(m, m, s - 2 * m, s - 2 * m);
-                            FillRound(g, Hex("9FCC2E"), tile, tile.Width * 0.24f);
-                            float pad = tile.Width * (s <= 20 ? 0.10f : 0.16f);
-                            var inner = Rectangle.Round(new RectangleF(tile.X + pad, tile.Y + pad, tile.Width - 2 * pad, tile.Height - 2 * pad));
-                            DrawPlane(g, inner, Hex("141A06"), takeoff, 10000, true);
+                            paint(g, s);
                         }
                         using (var ms = new System.IO.MemoryStream()) { bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png); images.Add(ms.ToArray()); }
                     }
             }
             finally { Scale = oldScale; }
-
-            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
-            using (var fs = new System.IO.FileStream(path, System.IO.FileMode.Create))
-            using (var w = new System.IO.BinaryWriter(fs))
+            using (var ms = new System.IO.MemoryStream())
+            using (var w = new System.IO.BinaryWriter(ms))
             {
-                w.Write((short)0); w.Write((short)1); w.Write((short)sizes.Length);
-                int offset = 6 + 16 * sizes.Length;
-                for (int i = 0; i < sizes.Length; i++)
+                w.Write((short)0); w.Write((short)1); w.Write((short)IcoSizes.Length);
+                int offset = 6 + 16 * IcoSizes.Length;
+                for (int i = 0; i < IcoSizes.Length; i++)
                 {
-                    w.Write((byte)(sizes[i] >= 256 ? 0 : sizes[i])); w.Write((byte)(sizes[i] >= 256 ? 0 : sizes[i]));
+                    w.Write((byte)(IcoSizes[i] >= 256 ? 0 : IcoSizes[i])); w.Write((byte)(IcoSizes[i] >= 256 ? 0 : IcoSizes[i]));
                     w.Write((byte)0); w.Write((byte)0); w.Write((short)1); w.Write((short)32);
                     w.Write(images[i].Length); w.Write(offset);
                     offset += images[i].Length;
                 }
                 foreach (var img in images) w.Write(img);
+                w.Flush();
+                return ms.ToArray();
             }
+        }
+
+        static byte[] LogoIco()
+        {
+            return BuildIco((g, s) => { float m = s <= 20 ? 0.5f : s * 0.04f; DrawLogo(g, new RectangleF(m, m, s - 2 * m, s - 2 * m)); });
+        }
+
+        static byte[] FlightIco(bool takeoff)
+        {
+            return BuildIco((g, s) =>
+            {
+                float m = s <= 20 ? 0.5f : s * 0.04f;
+                var tile = new RectangleF(m, m, s - 2 * m, s - 2 * m);
+                FillRound(g, Accent, tile, tile.Width * 0.24f);
+                float pad = tile.Width * (s <= 20 ? 0.10f : 0.16f);
+                var inner = Rectangle.Round(new RectangleF(tile.X + pad, tile.Y + pad, tile.Width - 2 * pad, tile.Height - 2 * pad));
+                DrawPlane(g, inner, AccentText, takeoff, 10000, true);
+            });
+        }
+
+        static void WriteFile(string path, byte[] data)
+        {
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
+            System.IO.File.WriteAllBytes(path, data);
+        }
+
+        /// <summary>Shortcut icon: accent tile with a plane taking off (or landing).</summary>
+        public static void SaveFlightIcon(string path, bool takeoff) { WriteFile(path, FlightIco(takeoff)); }
+
+        /// <summary>The FlightDeck logo as an .ico file, in the current accent colour.</summary>
+        public static void SaveLogoIcon(string path) { WriteFile(path, LogoIco()); }
+
+        /// <summary>Window/taskbar icon in the current accent colour.</summary>
+        public static Icon AppIcon()
+        {
+            try { return new Icon(new System.IO.MemoryStream(LogoIco())); } catch { return null; }
         }
 
         /// <summary>App's real icon when available, otherwise a colored tile with initials.</summary>
@@ -546,7 +627,7 @@ namespace FlightDeck
             BackColor = Theme.Bg;
             ForeColor = Theme.Text;
             Font = Theme.F10;
-            try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
+            try { Icon = Theme.AppIcon() ?? Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
         }
         protected override void OnHandleCreated(EventArgs e)
         {
@@ -916,6 +997,308 @@ namespace FlightDeck
                 TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
 
             void FillRound(RectangleF r, Color c) { Theme.FillRound(g, c, r, r.Height / 2); }
+        }
+    }
+
+    /// <summary>Row of preset accent colours plus a "custom" slot that opens the colour picker.</summary>
+    class AccentPicker : Owner
+    {
+        public static readonly Color[] Presets =
+        {
+            Theme.DefaultAccent, Theme.Hex("2EC4B6"), Theme.Hex("3BA3F5"), Theme.Hex("6C7CFF"),
+            Theme.Hex("A178FF"), Theme.Hex("F06292"), Theme.Hex("FF7A59"), Theme.Hex("F5B83D")
+        };
+        static readonly string[] names = { "Lime (default)", "Teal", "Sky", "Indigo", "Violet", "Pink", "Coral", "Amber" };
+
+        Color current;
+        int hot = -1;
+        public event Action<Color> Picked;
+        readonly ToolTip tip = new ToolTip();
+
+        public AccentPicker(Color c)
+        {
+            current = c;
+            Size = new Size(Slot() * (Presets.Length + 1) + Theme.S(4), Theme.S(34));
+            Cursor = Cursors.Hand;
+        }
+        static int Slot() { return Theme.S(34); }
+        int CustomIndex { get { return Presets.Length; } }
+        bool IsPreset { get { return Array.Exists(Presets, p => p.ToArgb() == current.ToArgb()); } }
+
+        int At(Point p) { int i = p.X / Slot(); return i >= 0 && i <= CustomIndex ? i : -1; }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            int h = At(e.Location);
+            if (h != hot) { hot = h; Invalidate(); tip.SetToolTip(this, h < 0 ? "" : h == CustomIndex ? "Custom colour…" : names[h]); }
+        }
+        protected override void OnMouseLeave(EventArgs e) { hot = -1; base.OnMouseLeave(e); }
+
+        protected override void OnMouseClick(MouseEventArgs e)
+        {
+            base.OnMouseClick(e);
+            int i = At(e.Location);
+            if (i < 0) return;
+            Color c;
+            if (i == CustomIndex)
+            {
+                using (var d = new ColorPickerDialog(current))
+                {
+                    if (d.ShowDialog(FindForm()) != DialogResult.OK) return;
+                    c = d.Value;
+                }
+            }
+            else c = Presets[i];
+            if (c.ToArgb() == current.ToArgb()) return;
+            current = c;
+            Invalidate();
+            var h = Picked; if (h != null) h(c);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.Clear(BackColor);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            int s = Slot(), d = Theme.S(24);
+            for (int i = 0; i <= CustomIndex; i++)
+            {
+                var r = new RectangleF(i * s + (s - d) / 2f, (Height - d) / 2f, d, d);
+                bool custom = i == CustomIndex;
+                bool selected = custom ? !IsPreset : Presets[i].ToArgb() == current.ToArgb();
+                if (selected || i == hot)
+                {
+                    var ring = RectangleF.Inflate(r, Theme.S(4), Theme.S(4));
+                    using (var pen = new Pen(selected ? Theme.Text : Theme.Faint, Theme.S(2))) g.DrawEllipse(pen, ring);
+                }
+                if (custom)
+                {
+                    if (!IsPreset) using (var b = new SolidBrush(current)) g.FillEllipse(b, r);
+                    else
+                    {
+                        // little colour wheel
+                        using (var path = new GraphicsPath())
+                        {
+                            path.AddEllipse(r);
+                            using (var pgb = new PathGradientBrush(path))
+                            {
+                                pgb.CenterColor = Color.White;
+                                pgb.SurroundColors = new[] { Color.Red, Color.Yellow, Color.Lime, Color.Cyan, Color.Blue, Color.Magenta };
+                                g.FillEllipse(pgb, r);
+                            }
+                        }
+                    }
+                    Theme.DrawGlyph(g, Theme.Glyph.Add, 8f, !IsPreset ? Theme.AccentText : Color.Black, Rectangle.Round(r));
+                }
+                else using (var b = new SolidBrush(Presets[i])) g.FillEllipse(b, r);
+            }
+        }
+    }
+
+    /// <summary>Colour picker: saturation/brightness square, hue strip, hex and RGB fields, live preview.</summary>
+    class ColorPickerDialog : DarkForm
+    {
+        public Color Value { get; private set; }
+        double hue, sat, val;
+        readonly SVSquare square;
+        readonly HueStrip strip;
+        readonly TextField hex, fr, fg, fb;
+        readonly Panel preview;
+        bool syncing;
+
+        public ColorPickerDialog(Color start)
+        {
+            Text = "Accent colour";
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = MinimizeBox = false;
+            ShowInTaskbar = false;
+            StartPosition = FormStartPosition.CenterParent;
+            int pad = Theme.S(24);
+            ClientSize = new Size(Theme.S(560), Theme.S(380));
+            Value = start;
+            ToHsv(start, out hue, out sat, out val);
+
+            square = new SVSquare(this) { Bounds = new Rectangle(pad, pad, Theme.S(256), Theme.S(256)) };
+            strip = new HueStrip(this) { Bounds = new Rectangle(square.Right + Theme.S(14), pad, Theme.S(24), Theme.S(256)) };
+            int x = strip.Right + Theme.S(24), w = ClientSize.Width - x - pad;
+
+            var pl = Theme.MakeLabel("Preview", Theme.F9, Theme.Muted, Theme.Bg); pl.Location = new Point(x, pad - Theme.S(2));
+            preview = new Panel { Bounds = new Rectangle(x, pad + Theme.S(20), w, Theme.S(64)) };
+            preview.Paint += PaintPreview;
+            typeof(Panel).GetProperty("DoubleBuffered", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(preview, true, null);
+
+            int y = preview.Bottom + Theme.S(16);
+            var hl = Theme.MakeLabel("Hex", Theme.F9, Theme.Muted, Theme.Bg); hl.Location = new Point(x, y);
+            hex = new TextField("#" + Theme.ToHex(start)) { Location = new Point(x, y + Theme.S(20)), Width = w };
+            y += Theme.S(66);
+            int q = (w - 2 * Theme.S(8)) / 3;
+            var lr = Theme.MakeLabel("R", Theme.F9, Theme.Muted, Theme.Bg); lr.Location = new Point(x, y);
+            var lg = Theme.MakeLabel("G", Theme.F9, Theme.Muted, Theme.Bg); lg.Location = new Point(x + q + Theme.S(8), y);
+            var lb = Theme.MakeLabel("B", Theme.F9, Theme.Muted, Theme.Bg); lb.Location = new Point(x + 2 * (q + Theme.S(8)), y);
+            fr = new TextField(start.R.ToString()) { Location = new Point(x, y + Theme.S(20)), Width = q };
+            fg = new TextField(start.G.ToString()) { Location = new Point(lg.Left, y + Theme.S(20)), Width = q };
+            fb = new TextField(start.B.ToString()) { Location = new Point(lb.Left, y + Theme.S(20)), Width = q };
+
+            hex.ValueChanged += (s, e) => { Color c; if (!syncing && Theme.TryHex(hex.Value, out c)) SetColor(c, hex); };
+            EventHandler rgb = (s, e) =>
+            {
+                if (syncing) return;
+                int r, g2, b;
+                if (int.TryParse(fr.Value, out r) && int.TryParse(fg.Value, out g2) && int.TryParse(fb.Value, out b) &&
+                    r >= 0 && r <= 255 && g2 >= 0 && g2 <= 255 && b >= 0 && b <= 255)
+                    SetColor(Color.FromArgb(r, g2, b), (Control)s);
+            };
+            fr.ValueChanged += rgb; fg.ValueChanged += rgb; fb.ValueChanged += rgb;
+
+            var ok = new FlatButton("Use colour", null, BtnStyle.Primary, 40);
+            var cancel = new FlatButton("Cancel", null, BtnStyle.Normal, 40);
+            var reset = new FlatButton("Default", Theme.Glyph.Refresh, BtnStyle.Ghost, 40);
+            ok.Location = new Point(ClientSize.Width - pad - ok.Width, ClientSize.Height - pad - ok.Height);
+            cancel.Location = new Point(ok.Left - Theme.S(10) - cancel.Width, ok.Top);
+            reset.Location = new Point(pad - Theme.S(8), ok.Top);
+            ok.Click += (s, e) => { DialogResult = DialogResult.OK; Close(); };
+            cancel.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
+            reset.Click += (s, e) => SetColor(Theme.DefaultAccent, null);
+
+            Controls.AddRange(new Control[] { square, strip, pl, preview, hl, hex, lr, lg, lb, fr, fg, fb, ok, cancel, reset });
+            AcceptButton = null;
+        }
+
+        // ---- HSV ----
+        public static void ToHsv(Color c, out double h, out double s, out double v)
+        {
+            double r = c.R / 255.0, g = c.G / 255.0, b = c.B / 255.0;
+            double max = Math.Max(r, Math.Max(g, b)), min = Math.Min(r, Math.Min(g, b)), d = max - min;
+            h = 0;
+            if (d > 0)
+            {
+                if (max == r) h = 60 * (((g - b) / d) % 6);
+                else if (max == g) h = 60 * ((b - r) / d + 2);
+                else h = 60 * ((r - g) / d + 4);
+            }
+            if (h < 0) h += 360;
+            s = max == 0 ? 0 : d / max;
+            v = max;
+        }
+
+        public static Color FromHsv(double h, double s, double v)
+        {
+            h = ((h % 360) + 360) % 360;
+            double c = v * s, x = c * (1 - Math.Abs((h / 60) % 2 - 1)), m = v - c, r, g, b;
+            if (h < 60) { r = c; g = x; b = 0; }
+            else if (h < 120) { r = x; g = c; b = 0; }
+            else if (h < 180) { r = 0; g = c; b = x; }
+            else if (h < 240) { r = 0; g = x; b = c; }
+            else if (h < 300) { r = x; g = 0; b = c; }
+            else { r = c; g = 0; b = x; }
+            return Color.FromArgb((int)Math.Round((r + m) * 255), (int)Math.Round((g + m) * 255), (int)Math.Round((b + m) * 255));
+        }
+
+        public double Hue { get { return hue; } set { hue = value; FromParts(); } }
+        public double Sat { get { return sat; } }
+        public double Val { get { return val; } }
+        public void SetSV(double s, double v) { sat = Math.Max(0, Math.Min(1, s)); val = Math.Max(0, Math.Min(1, v)); FromParts(); }
+
+        void FromParts() { Value = FromHsv(hue, sat, val); Sync(null); }
+
+        void SetColor(Color c, Control source)
+        {
+            Value = c;
+            double h, s, v; ToHsv(c, out h, out s, out v);
+            if (s > 0.001 && v > 0.001) hue = h;   // keep the hue for greys/black
+            sat = s; val = v;
+            Sync(source);
+        }
+
+        void Sync(Control source)
+        {
+            syncing = true;
+            if (source != hex) hex.Value = "#" + Theme.ToHex(Value);
+            if (source != fr && source != fg && source != fb) { fr.Value = Value.R.ToString(); fg.Value = Value.G.ToString(); fb.Value = Value.B.ToString(); }
+            syncing = false;
+            square.Invalidate(); strip.Invalidate(); preview.Invalidate();
+        }
+
+        void PaintPreview(object sender, PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.Clear(Theme.Bg);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            var c = Value;
+            var dark = Theme.Mix(c, Color.Black, 0.88);
+            var ink = Theme.Contrast(dark, c) >= Theme.Contrast(Color.White, c) ? dark : Color.White;
+            int h = preview.Height;
+            // logo tile + a Start Flight button, as they will look
+            var tile = new RectangleF(0, (h - Theme.S(44)) / 2f, Theme.S(44), Theme.S(44));
+            Theme.FillRound(g, c, tile, Theme.S(10));
+            float m = tile.Width * 0.2f, gap = tile.Width * 0.07f, inner = tile.Width - 2 * m, lw = inner * 0.56f, hh = (inner - gap) / 2;
+            Theme.FillRound(g, ink, new RectangleF(tile.X + m, tile.Y + m, lw - gap / 2, inner), Theme.S(2));
+            Theme.FillRound(g, ink, new RectangleF(tile.X + m + lw + gap / 2, tile.Y + m, inner - lw - gap / 2, hh), Theme.S(2));
+            Theme.FillRound(g, ink, new RectangleF(tile.X + m + lw + gap / 2, tile.Y + m + hh + gap, inner - lw - gap / 2, hh), Theme.S(2));
+            var btn = new RectangleF(tile.Right + Theme.S(14), (h - Theme.S(40)) / 2f, preview.Width - tile.Right - Theme.S(16), Theme.S(40));
+            Theme.FillRound(g, c, btn, Theme.S(10));
+            var br = Rectangle.Round(btn);
+            Theme.DrawPlane(g, new Rectangle(br.X + Theme.S(14), br.Y, Theme.S(22), br.Height), ink, true);
+            TextRenderer.DrawText(g, "Start Flight", Theme.F9S, new Rectangle(br.X + Theme.S(42), br.Y, br.Width - Theme.S(46), br.Height), ink,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPadding);
+        }
+
+        /// <summary>Saturation (x) × brightness (y) square for the current hue.</summary>
+        class SVSquare : Owner
+        {
+            readonly ColorPickerDialog dlg;
+            Bitmap cache; double cacheHue = -1;
+            public SVSquare(ColorPickerDialog d) { dlg = d; Cursor = Cursors.Cross; }
+            protected override void OnParentChanged(EventArgs e) { }
+
+            void Pick(Point p) { dlg.SetSV(p.X / (double)(Width - 1), 1 - p.Y / (double)(Height - 1)); }
+            protected override void OnMouseDown(MouseEventArgs e) { base.OnMouseDown(e); Capture = true; Pick(e.Location); }
+            protected override void OnMouseMove(MouseEventArgs e) { base.OnMouseMove(e); if (e.Button == MouseButtons.Left) Pick(e.Location); }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                var g = e.Graphics;
+                if (cache == null || cacheHue != dlg.Hue || cache.Width != Width)
+                {
+                    if (cache != null) cache.Dispose();
+                    cache = new Bitmap(Width, Height);
+                    using (var cg = Graphics.FromImage(cache))
+                    {
+                        var r = new Rectangle(0, 0, Width, Height);
+                        using (var h = new LinearGradientBrush(r, Color.White, FromHsv(dlg.Hue, 1, 1), 0f)) cg.FillRectangle(h, r);
+                        using (var v = new LinearGradientBrush(r, Color.Transparent, Color.Black, 90f)) cg.FillRectangle(v, r);
+                    }
+                    cacheHue = dlg.Hue;
+                }
+                g.DrawImage(cache, 0, 0);
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                float x = (float)(dlg.Sat * (Width - 1)), y = (float)((1 - dlg.Val) * (Height - 1)), d = Theme.S(14);
+                using (var pen = new Pen(Color.White, Theme.S(2.5f))) g.DrawEllipse(pen, x - d / 2, y - d / 2, d, d);
+                using (var pen = new Pen(Color.FromArgb(120, 0, 0, 0), 1f)) g.DrawEllipse(pen, x - d / 2 - 1.5f, y - d / 2 - 1.5f, d + 3, d + 3);
+            }
+            protected override void Dispose(bool disposing) { if (disposing && cache != null) cache.Dispose(); base.Dispose(disposing); }
+        }
+
+        /// <summary>Vertical hue strip.</summary>
+        class HueStrip : Owner
+        {
+            readonly ColorPickerDialog dlg;
+            public HueStrip(ColorPickerDialog d) { dlg = d; Cursor = Cursors.Hand; }
+            protected override void OnParentChanged(EventArgs e) { }
+            void Pick(int y) { dlg.Hue = Math.Max(0, Math.Min(359.9, y / (double)(Height - 1) * 360)); }
+            protected override void OnMouseDown(MouseEventArgs e) { base.OnMouseDown(e); Capture = true; Pick(e.Y); }
+            protected override void OnMouseMove(MouseEventArgs e) { base.OnMouseMove(e); if (e.Button == MouseButtons.Left) Pick(e.Y); }
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                var g = e.Graphics;
+                g.Clear(Theme.Bg);
+                for (int y = 0; y < Height; y++)
+                    using (var p = new Pen(FromHsv(y / (double)Height * 360, 1, 1))) g.DrawLine(p, Theme.S(4), y, Width - Theme.S(4), y);
+                int yy = (int)(dlg.Hue / 360 * (Height - 1));
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var pen = new Pen(Theme.Text, Theme.S(2))) g.DrawRectangle(pen, 1, yy - Theme.S(3), Width - 3, Theme.S(6));
+            }
         }
     }
 }
