@@ -68,6 +68,8 @@ namespace FlightDeck
         readonly ProfileButton profileBtn;
         readonly Card appsCard, logCard;
         readonly Label appsTitle, appsSub, emptyLbl, logTitle, warnLbl;
+        readonly ProgressStrip progress;
+        readonly Timer hideProgress;
         readonly Panel tiles;
         readonly TextBox log;
         readonly List<AppTile> tileList = new List<AppTile>();
@@ -107,7 +109,10 @@ namespace FlightDeck
             };
             if (log.Font.Name != "Cascadia Mono") log.Font = new Font("Consolas", 9.5f);
             log.HandleCreated += (s, e) => Native.DarkScrollbars(log.Handle);
-            logCard.Controls.AddRange(new Control[] { logTitle, log });
+            progress = new ProgressStrip { Visible = false };
+            logCard.Controls.AddRange(new Control[] { logTitle, progress, log });
+            hideProgress = new Timer { Interval = 5000 };
+            hideProgress.Tick += (s, e) => { hideProgress.Stop(); progress.Visible = false; PerformLayout(); };
 
             Controls.Add(appsCard);
             Controls.Add(logCard);
@@ -120,6 +125,7 @@ namespace FlightDeck
         protected override void Dispose(bool disposing)
         {
             if (disposing && poll != null) { poll.Stop(); poll.Dispose(); }
+            if (disposing && hideProgress != null) { hideProgress.Stop(); hideProgress.Dispose(); }
             base.Dispose(disposing);
         }
 
@@ -127,6 +133,15 @@ namespace FlightDeck
         {
             btnStart.Enabled = !busy;
             btnApply.Enabled = !busy;
+        }
+
+        /// <summary>Progress of Start Flight / End Flight / Apply layout, shown under "Activity".</summary>
+        public void ShowProgress(int done, int total, string label, bool problem)
+        {
+            hideProgress.Stop();
+            if (!progress.Visible) { progress.Reset(); progress.Visible = true; PerformLayout(); }
+            progress.Set(done, total, label, problem);
+            if (total > 0 && done >= total) hideProgress.Start();   // keep the full bar a moment, then tidy up
         }
 
         public void AddLine(string line)
@@ -218,7 +233,13 @@ namespace FlightDeck
             int ly = r.Y + cardH + Theme.S(16);
             logCard.SetBounds(r.X, ly, r.Width, Math.Max(Theme.S(100), r.Bottom - ly));
             logTitle.Location = new Point(pad, Theme.S(18));
-            log.SetBounds(pad, Theme.S(54), r.Width - 2 * pad, logCard.Height - Theme.S(54) - Theme.S(14));
+            int logTop = Theme.S(54);
+            if (progress.Visible)
+            {
+                progress.SetBounds(pad, Theme.S(50), r.Width - 2 * pad, Theme.S(30));
+                logTop = Theme.S(92);
+            }
+            log.SetBounds(pad, logTop, r.Width - 2 * pad, logCard.Height - logTop - Theme.S(14));
         }
     }
 

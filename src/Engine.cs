@@ -396,6 +396,9 @@ namespace FlightDeck
         public event Action<AppEntry, string> Status;
         public event Action<string, bool, int> Done;   // kind, cancelled, problems
         public event Action<string> BeforeStacking;     // kind
+        public event Action<int, int, string> Progress; // done, total, label
+        int lastDone = -1;
+        void P(int done, int total, string label) { lastDone = done; var h = Progress; if (h != null) h(done, total, label); }
         public bool Busy { get; private set; }
         public int Problems { get; private set; }
         volatile bool cancel;
@@ -489,6 +492,8 @@ namespace FlightDeck
                 jobs.Add(new Job { App = a, WasRunning = w != null });
             }
 
+            int nApps = apps.Count, totalSteps = nApps + (nApps > 1 ? 1 : 0);
+            P(nApps - jobs.Count, totalSteps, positionOnly ? "Placing windows…" : "Opening apps…");
             double[] launchedPasses = { 0, 3, 8 };      // apps we just started: they often move themselves while loading
             double[] runningPasses = { 0, 1.5, 4 };     // apps that were already open
             const double settleSeconds = 30;            // after the passes, keep checking for up to this long
@@ -596,6 +601,7 @@ namespace FlightDeck
                         PlaceJob(j, w);
                     }
                 }
+                if (nApps - jobs.Count != lastDone) P(nApps - jobs.Count, totalSteps, (nApps - jobs.Count) + " of " + nApps + " apps ready");
                 Thread.Sleep(400);
             }
             if (!cancel)
@@ -610,6 +616,7 @@ namespace FlightDeck
             {
                 // Final step, after the last (slowest) app was placed: set which window is in front.
                 var bs = BeforeStacking; if (bs != null) bs(positionOnly ? "apply" : "start");
+                P(nApps, totalSteps, "Setting the window order…");
                 Thread.Sleep(1500);
                 if (cancel) return;
                 ApplyStacking(apps, false);
@@ -618,6 +625,7 @@ namespace FlightDeck
                 ApplyStacking(apps, true);
                 L("Stacking order applied (front → back): " + string.Join(" › ", apps.Select(a => a.Name)));
             }
+            P(totalSteps, totalSteps, positionOnly ? "Layout applied" : "All set");
             L(positionOnly ? "Layout applied." : "Flight ready. Have a good one ✈");
         }
 
@@ -698,6 +706,8 @@ namespace FlightDeck
                 closing.Add(a);
             }
 
+            int nEnd = apps.Count;
+            P(nEnd - closing.Count, nEnd, "Closing apps…");
             var start = DateTime.Now;
             var inTray = new HashSet<AppEntry>();
             while (closing.Count > 0 && (DateTime.Now - start).TotalSeconds < cfg.CloseTimeout)
@@ -715,9 +725,11 @@ namespace FlightDeck
                         L(a.Name + " went to the tray instead of closing" + (cfg.ForceClose ? " — FlightDeck will close it in " + Math.Max(1, left) + " s." : "."));
                     }
                 }
+                if (nEnd - closing.Count != lastDone) P(nEnd - closing.Count, nEnd, (nEnd - closing.Count) + " of " + nEnd + " apps closed");
                 if (closing.Count > 0) Thread.Sleep(400);
             }
 
+            if (closing.Count > 0) P(nEnd - closing.Count, nEnd, "Closing the apps that are still running…");
             foreach (var a in closing)
             {
                 if (!cfg.ForceClose) { S(a, "Running"); L(a.Name + ": still running (force close is off)."); continue; }
@@ -735,6 +747,7 @@ namespace FlightDeck
                 }
                 else { S(a, "Closed"); L(a.Name + (inTray.Contains(a) ? ": closed from the tray." : ": closed (forced).")); }
             }
+            P(nEnd, nEnd, "Flight ended");
             L("Flight ended.");
         }
     }

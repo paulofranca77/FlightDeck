@@ -68,6 +68,7 @@ namespace FlightDeck
             Diagnostics.Write("==== FlightDeck " + Application.ProductVersion + " started (elevated: " + Util.IsElevated() + ") ====");
             Runner.Status += (a, st) => Ui(() => { Live[a.Id] = st; Dash.RefreshStatus(); });
             Runner.Done += (kind, cancelled, problems) => Ui(() => OnRunnerDone(kind, cancelled, problems));
+            Runner.Progress += (done, total, label) => Ui(() => Dash.ShowProgress(done, total, label, Runner.Problems > 0));
             // Get out of the way before the final stacking pass, so FlightDeck itself never ends up covering anything.
             Runner.BeforeStacking += kind => Ui(() => { if (kind == "start" && Visible) { TopMost = false; TopMost = true; } });
 
@@ -195,7 +196,7 @@ namespace FlightDeck
             AddNav("Apps", Theme.Glyph.Apps, AppsPg);
             AddNav("Layout", Theme.Glyph.Monitor, LayoutPg);
             navSettings = AddNav("Settings", Theme.Glyph.Settings, SettingsPg);
-            version = Theme.MakeLabel("v2.0" + (Util.IsElevated() ? "  ·  administrator" : ""), Theme.F9, Theme.Faint, Theme.Sidebar);
+            version = Theme.MakeLabel("v2.1" + (Util.IsElevated() ? "  ·  administrator" : ""), Theme.F9, Theme.Faint, Theme.Sidebar);
             sidebar.Controls.Add(version);
             sidebar.Resize += (s, e) => LayoutSidebar();
             LayoutSidebar();

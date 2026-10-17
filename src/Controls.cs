@@ -862,4 +862,60 @@ namespace FlightDeck
             return Color.FromArgb((c.R * a + bg.R * (255 - a)) / 255, (c.G * a + bg.G * (255 - a)) / 255, (c.B * a + bg.B * (255 - a)) / 255);
         }
     }
+
+    /// <summary>Thin animated progress bar with a status label (Activity card).</summary>
+    class ProgressStrip : Owner
+    {
+        float shown, target;
+        string label = "";
+        bool problem;
+        readonly Timer anim = new Timer { Interval = 16 };
+
+        public ProgressStrip()
+        {
+            Height = Theme.S(30);
+            anim.Tick += (s, e) =>
+            {
+                float d = target - shown;
+                if (Math.Abs(d) < 0.002f) { shown = target; anim.Stop(); }
+                else shown += d * 0.18f;
+                Invalidate();
+            };
+        }
+        protected override void OnParentChanged(EventArgs e) { base.OnParentChanged(e); if (Parent != null) BackColor = Parent.BackColor; }
+        protected override void Dispose(bool disposing) { if (disposing) anim.Dispose(); base.Dispose(disposing); }
+
+        public void Set(int done, int total, string text, bool hasProblem)
+        {
+            float v = total <= 0 ? 0 : Math.Max(0, Math.Min(1, done / (float)total));
+            if (v < target - 0.001f) shown = v;      // a new run: start from its own value
+            target = v; label = text ?? ""; problem = hasProblem;
+            anim.Start();
+            Invalidate();
+        }
+
+        public void Reset() { shown = target = 0; label = ""; problem = false; Invalidate(); }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.Clear(BackColor);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            int barH = Theme.S(6);
+            var track = new RectangleF(0, Height - barH - Theme.S(2), Width - 1, barH);
+            FillRound(track, Theme.ToggleOff);
+            if (shown > 0.001f)
+            {
+                var fill = new RectangleF(track.X, track.Y, Math.Max(barH, track.Width * shown), barH);
+                FillRound(fill, problem ? Theme.Orange : Theme.Accent);
+            }
+            string pct = ((int)Math.Round(target * 100)) + "%";
+            TextRenderer.DrawText(g, label, Theme.F9, new Rectangle(0, 0, Width - Theme.S(50), Theme.S(18)), Theme.SubText,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
+            TextRenderer.DrawText(g, pct, Theme.F9S, new Rectangle(Width - Theme.S(50), 0, Theme.S(50), Theme.S(18)), Theme.Muted,
+                TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+
+            void FillRound(RectangleF r, Color c) { Theme.FillRound(g, c, r, r.Height / 2); }
+        }
+    }
 }

@@ -4,6 +4,10 @@ FlightDeck was built over a few days in October 2026 through a conversation betw
 (who tested every build on his own setup) and Claude, the AI that wrote the code. These are the steps it went
 through. Only v2.0 is published as a download; the earlier builds were private test versions.
 
+## v2.1
+- Progress bar under "Activity" during Start Flight, End Flight and Apply layout
+  ("3 of 7 apps ready", "Setting the window order…", turns orange if an app needs attention).
+
 ## v2.0 — first public release
 - Landing animation ("Welcome back!") after End Flight when every app closed.
 - "In tray" status while End Flight waits for apps that hide in the tray instead of quitting.
