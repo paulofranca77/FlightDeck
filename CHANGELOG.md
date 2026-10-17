@@ -11,8 +11,8 @@ through. Only v2.0 is published as a download; the earlier builds were private t
   an add-on connected to the sim could crash it (a real MSFS 2024 crash report led to this). Close timeout
   is now 20 s by default, and FlightDeck never closes the simulator itself, even if it's in your app list.
 - **Wait for SimConnect** (suggested by a user): an option per app to open it only once the simulator is
-  ready for add-ons, during its main loading. FlightDeck goes to the tray, waits, then opens and places
-  those apps and re-applies the window order.
+  ready for add-ons, during its main loading. It's a SIMCONNECT toggle in the Apps list. FlightDeck goes to
+  the tray, waits, then opens and places those apps and re-applies the window order.
 - **Minimize to tray** (Settings, on by default): minimizing puts FlightDeck next to the clock instead of
   the taskbar. One click on the tray icon brings it back.
 - **First-run guide**: when a profile has no apps yet, the Dashboard and Apps page show what to do, step

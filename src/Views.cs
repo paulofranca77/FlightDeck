@@ -106,17 +106,17 @@ namespace FlightDeck
     /// <summary>Shared column positions for the apps table.</summary>
     static class Cols
     {
-        // 0 grip · 1 name · 2 path · 3 position · 4 wait · 5 autorun · 6 admin · 7 auto-close · 8 actions
+        // 0 grip · 1 name · 2 path · 3 position · 4 wait · 5 autorun · 6 admin · 7 auto-close · 8 simconnect · 9 actions
         public static int[] X(int w)
         {
-            int grip = Theme.S(34), wait = Theme.S(84), tog = Theme.S(90), act = Theme.S(84);
-            int flex = Math.Max(Theme.S(380), w - grip - wait - tog * 3 - act - Theme.S(24));
+            int grip = Theme.S(32), wait = Theme.S(78), tog = Theme.S(84), act = Theme.S(80);
+            int flex = Math.Max(Theme.S(320), w - grip - wait - tog * 4 - act - Theme.S(20));
             int nameW = (int)(flex * 0.31), pathW = (int)(flex * 0.40);
             int x0 = Theme.S(10), x1 = x0 + grip;
             int x4 = x1 + flex;
-            return new[] { x0, x1, x1 + nameW, x1 + nameW + pathW, x4, x4 + wait, x4 + wait + tog, x4 + wait + tog * 2, x4 + wait + tog * 3 };
+            return new[] { x0, x1, x1 + nameW, x1 + nameW + pathW, x4, x4 + wait, x4 + wait + tog, x4 + wait + tog * 2, x4 + wait + tog * 3, x4 + wait + tog * 4 };
         }
-        public static readonly string[] Headers = { "", "NAME", "PATH", "POSITION", "WAIT", "AUTORUN", "ADMIN", "AUTO-CLOSE", "" };
+        public static readonly string[] Headers = { "", "NAME", "PATH", "POSITION", "WAIT", "AUTORUN", "ADMIN", "AUTO-CLOSE", "SIMCONNECT", "" };
     }
 
     class TableHeader : Owner
@@ -137,11 +137,12 @@ namespace FlightDeck
     {
         public readonly AppEntry App;
         public readonly int Rank;
-        public readonly Toggle Autorun = new Toggle(), Admin = new Toggle(), AutoClose = new Toggle();
+        public readonly Toggle Autorun = new Toggle(), Admin = new Toggle(), AutoClose = new Toggle(), SimWait = new Toggle();
         public readonly TextField Wait;
         public readonly FlatButton BtnEdit = new FlatButton(null, Theme.Glyph.Edit, BtnStyle.Ghost, 32);
         public readonly FlatButton BtnDelete = new FlatButton(null, Theme.Glyph.Delete, BtnStyle.Ghost, 32);
         public event Action Changed;
+        static readonly ToolTip simTip = new ToolTip();
         bool dragging, linkHot;
         static readonly Font LinkFont = new Font(Theme.F9S, FontStyle.Underline);
         public bool DownOnGrab { get; private set; }
@@ -155,12 +156,14 @@ namespace FlightDeck
             Height = Theme.S(60);
             Cursor = Cursors.Hand;
             Wait = new TextField(a.Delay.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)) { Width = Theme.S(48), Height = Theme.S(32) };
-            Autorun.Checked = a.Enabled; Admin.Checked = a.Admin; AutoClose.Checked = a.CloseOnEnd;
+            Autorun.Checked = a.Enabled; Admin.Checked = a.Admin; AutoClose.Checked = a.CloseOnEnd; SimWait.Checked = a.WaitForSim;
+            SimWait.CheckedChanged += (s, e) => { App.WaitForSim = SimWait.Checked; Fire(); };
+            simTip.SetToolTip(SimWait, "Wait for SimConnect: open this app only when the simulator is ready for add-ons (during its main loading).");
             Autorun.CheckedChanged += (s, e) => { App.Enabled = Autorun.Checked; Fire(); };
             Admin.CheckedChanged += (s, e) => { App.Admin = Admin.Checked; Fire(); };
             AutoClose.CheckedChanged += (s, e) => { App.CloseOnEnd = AutoClose.Checked; Fire(); };
             Wait.ValueChanged += (s, e) => { App.Delay = Math.Max(0, Math.Min(600, Wait.DoubleValue(App.Delay))); Fire(); };
-            Controls.AddRange(new Control[] { Wait, Autorun, Admin, AutoClose, BtnEdit, BtnDelete });
+            Controls.AddRange(new Control[] { Wait, Autorun, Admin, AutoClose, SimWait, BtnEdit, BtnDelete });
             foreach (Control c in Controls) { c.MouseEnter += (s, e) => SetHover(true); c.MouseLeave += (s, e) => CheckHover(); }
             Wait.Box.MouseEnter += (s, e) => SetHover(true);
         }
@@ -204,9 +207,10 @@ namespace FlightDeck
             Autorun.Location = new Point(x[5], ty);
             Admin.Location = new Point(x[6], ty);
             AutoClose.Location = new Point(x[7], ty);
+            SimWait.Location = new Point(x[8], ty);
             int by = (Height - BtnEdit.Height) / 2;
-            BtnEdit.Location = new Point(x[8], by);
-            BtnDelete.Location = new Point(x[8] + BtnEdit.Width + Theme.S(2), by);
+            BtnEdit.Location = new Point(x[9], by);
+            BtnDelete.Location = new Point(x[9] + BtnEdit.Width + Theme.S(2), by);
         }
 
         protected override void OnPaint(PaintEventArgs e)
