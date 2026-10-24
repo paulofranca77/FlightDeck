@@ -70,7 +70,7 @@ namespace FlightDeck
         readonly Label appsTitle, appsSub, logTitle, warnLbl;
         readonly ProgressStrip progress;
         readonly Timer hideProgress;
-        readonly Panel tiles;
+        readonly LaneBoard tiles;
         readonly SetupGuide guide;
         readonly TextBox log;
         readonly List<AppTile> tileList = new List<AppTile>();
@@ -97,7 +97,9 @@ namespace FlightDeck
             warnLbl.Click += (s, e) => Host.ShowPage(Host.AppsPg);
             btnApply = new FlatButton("Re-apply layout", Theme.Glyph.Refresh, BtnStyle.Ghost, 34);
             btnApply.Click += (s, e) => Host.ApplyLayout();
-            tiles = new Panel { BackColor = Theme.Card };
+            tiles = new LaneBoard { BackColor = Theme.Card };
+            tiles.TileClicked += t => { if (t.DownOnPosition) Host.PositionApp(t.App); else Host.EditApp(t.App); };
+            tiles.Moved += (app, mode) => Host.BeginInvoke(new Action(() => Host.SetStartMode(app, mode)));
             guide = new SetupGuide { Visible = false };
             guide.BtnCapture.Click += (s, e) => Host.CaptureWindows();
             guide.BtnAdd.Click += (s, e) => { Host.ShowPage(Host.AppsPg); Host.AppsPg.AddManual(); };
@@ -181,11 +183,10 @@ namespace FlightDeck
             foreach (var a in Host.Apps)
             {
                 var t = new AppTile(a);
-                var app = a;
-                t.Click += (s, e) => { if (t.DownOnPosition) Host.PositionApp(app); else Host.EditApp(app); };
                 tileList.Add(t);
                 tiles.Controls.Add(t);
             }
+            tiles.SetTiles(tileList);
             tiles.ResumeLayout();
             int on = Host.Apps.Count(a => a.Enabled);
             appsSub.Text = Host.Apps.Count == 0 ? "" : on + " of " + Host.Apps.Count + " start with your flight";
@@ -213,7 +214,10 @@ namespace FlightDeck
             {
                 string st;
                 if (!Host.Live.TryGetValue(t.App.Id, out st))
+                {
                     st = !t.App.HasPos ? "No position yet" : IsRunningCached(t.App) ? "Running" : "Not running";
+                    if (t.App.StartMode == "delay" && st == "Not running") st = "Not running · opens after " + t.App.StartDelay + " s";
+                }
                 t.SetStatus(st);
             }
         }
@@ -226,28 +230,10 @@ namespace FlightDeck
             int warnH = warnLbl.Visible ? Theme.S(30) : 0;
 
             // Every app must stay visible: the apps card may take space from Activity (which keeps
-            // at least a small strip), and tiles shrink step by step until they all fit.
+            // at least a small strip), and the lanes shrink their tiles step by step until they all fit.
             int n = tileList.Count;
-            int maxTilesH = Math.Max(Theme.S(44), r.Height - Theme.S(60) - warnH - Theme.S(20) - Theme.S(16) - Theme.S(100));
-            int gap = Theme.S(12), tw = Theme.S(252), th = Theme.S(70), cols = 1, rows = 1;
-            for (float k = 1f; ; k -= 0.05f)
-            {
-                gap = Math.Max(Theme.S(6), (int)(Theme.S(12) * k));
-                tw = Math.Max(Theme.S(190), (int)(Theme.S(300) * k));
-                th = Math.Max(Theme.S(38), (int)(Theme.S(70) * k));
-                cols = Math.Max(1, (innerW + gap) / (tw + gap));
-                rows = Math.Max(1, (int)Math.Ceiling(n / (double)cols));
-                if (rows * th + (rows - 1) * gap <= maxTilesH || k <= 0.45f) break;
-            }
-            // spread the tiles over the full width of the card
-            if (n > 0)
-            {
-                int used = Math.Min(cols, n);
-                int fill = (innerW - (cols - 1) * gap) / cols;
-                tw = Math.Min(Theme.S(360), Math.Max(tw, fill));
-                if (used < cols) tw = Math.Min(tw, Theme.S(320));
-            }
-            int tilesH = n == 0 ? 0 : rows * th + (rows - 1) * gap;
+            int maxTilesH = Math.Max(Theme.S(100), r.Height - Theme.S(60) - warnH - Theme.S(20) - Theme.S(16) - Theme.S(100));
+            int tilesH = n == 0 ? 0 : tiles.Arrange(innerW, maxTilesH);
             int guideH = n == 0 ? guide.HeightFor(innerW) : 0;
             int cardH = n == 0 ? Theme.S(62) + guideH + Theme.S(18) : Theme.S(60) + warnH + tilesH + Theme.S(20);
 
@@ -257,8 +243,7 @@ namespace FlightDeck
             btnApply.Location = new Point(r.Width - pad - btnApply.Width + Theme.S(8), Theme.S(12));
             warnLbl.Location = new Point(pad, Theme.S(54));
             tiles.SetBounds(pad, Theme.S(60) + warnH, innerW, Math.Max(1, tilesH));
-            for (int i = 0; i < n; i++)
-                tileList[i].SetBounds((i % cols) * (tw + gap), (i / cols) * (th + gap), tw, th);
+            tiles.Visible = n > 0;
             if (n == 0) guide.SetBounds(pad, Theme.S(62), innerW, guideH);
 
             int ly = r.Y + cardH + Theme.S(16);

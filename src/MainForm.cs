@@ -754,6 +754,27 @@ namespace FlightDeck
         // =================================================================
         //  Apps
         // =================================================================
+        /// <summary>Dashboard lanes: an app was dragged to another START lane.</summary>
+        public void SetStartMode(AppEntry a, string mode)
+        {
+            if (mode == "delay")
+            {
+                string v = PromptDialog.Ask(this, "Open " + a.Name + " later", "Seconds after you click Start Flight:",
+                    (a.StartDelay > 0 ? a.StartDelay : 30).ToString());
+                int sec;
+                if (v == null || !int.TryParse(v.Trim().TrimEnd('s', 'S').Trim(), out sec) || sec <= 0 || sec > 3600)
+                {
+                    Dash.PerformLayout();   // cancelled: the tile goes back to its lane
+                    return;
+                }
+                a.StartDelay = sec;
+            }
+            a.StartMode = mode;
+            Save();
+            Log(a.Name + " now opens " + a.WhenText + ".");
+            RefreshAll();
+        }
+
         public void EditApp(AppEntry a)
         {
             bool isNew = !Apps.Contains(a);

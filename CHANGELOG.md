@@ -5,6 +5,9 @@ FlightDeck was built over a few days in October 2026 through a conversation betw
 through. Only v2.0 is published as a download; the earlier builds were private test versions.
 
 ## v2.4.0
+- **Dashboard lanes**: the companion apps are now shown in four lanes, one per START moment (Right away,
+  Delayed, Sim ready, Flight loaded). Each lane is as wide as its share of your apps, and you can drag an app
+  to another lane to change when it opens (Delayed asks for the seconds).
 - **START column** (from a user's feedback): choose when each app opens.
   - **Right away** — as before.
   - **After N seconds** — e.g. open your pre-flight tools first and the simulator itself 2 minutes later.

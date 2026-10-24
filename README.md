@@ -23,7 +23,7 @@ everything again when you land. It works with any Windows program, not just sim 
 
 - **Start Flight** — opens every app that isn't running, waits for each window and puts it back in its exact saved position and size (apps already open are moved too).
 - **End Flight** — closes your add-ons. Apps that hide in the system tray are asked to exit the way Windows does at shutdown, so they save and quit cleanly. Forcing an app closed is only a last resort, and never happens while the simulator is open (that can crash the sim).
-- **Start timing** — the START column decides when each app opens: right away, N seconds after Start Flight (you can even put the simulator itself in the list and open it after your pre-flight tools), when the sim is ready for add-ons (SimConnect), or once your flight has loaded and you're in the cockpit.
+- **Start timing** — the START column decides when each app opens: right away, N seconds after Start Flight (you can even put the simulator itself in the list and open it after your pre-flight tools), when the sim is ready for add-ons (SimConnect), or once your flight has loaded and you're in the cockpit. On the Dashboard each moment is a lane: drag an app between lanes to change it.
 - **Pixel-exact layouts** — works with Windows 11 snap layouts: snapped and resized windows come back edge to edge.
 - **Stacking order** — drag the apps in the list to choose which window stays in front; applied after the slowest app has settled.
 - **Step-by-step guide** on first run and for new profiles, right where your apps will appear.

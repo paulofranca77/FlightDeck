@@ -517,5 +517,173 @@ namespace FlightDeck
             Invalidate();
         }
     }
-}
+    /// <summary>
+    /// Dashboard board with one lane per START moment (Right away · Delayed · Sim ready · Flight loaded).
+    /// Lanes are as wide as their share of the apps, and a tile dragged to another lane changes when that app opens.
+    /// </summary>
+    class LaneBoard : Owner
+    {
+        public static readonly string[] Modes = { "now", "delay", "sim", "flight" };
+        static readonly string[] Titles = { "Right away", "Delayed", "Sim ready", "Flight loaded" };
+        static readonly string[] Hints = { "Open with Start Flight", "Open a few seconds later", "When the sim is ready for add-ons", "Once you're in the cockpit" };
 
+        readonly List<AppTile> tiles = new List<AppTile>();
+        Rectangle[] lanes = new Rectangle[4];
+        int[] counts = new int[4];
+
+        /// <summary>A tile was clicked (not dragged).</summary>
+        public event Action<AppTile> TileClicked;
+        /// <summary>A tile was dropped on another lane: app, new mode.</summary>
+        public event Action<AppEntry, string> Moved;
+
+        // dragging
+        AppTile drag; Point downAt, grabOffset; bool dragging; int hotLane = -1;
+
+        public LaneBoard() { }
+
+        static int LaneOf(AppEntry a) { int i = Array.IndexOf(Modes, a.StartMode); return i < 0 ? 0 : i; }
+
+        public void SetTiles(IEnumerable<AppTile> list)
+        {
+            tiles.Clear();
+            foreach (var t in list)
+            {
+                tiles.Add(t);
+                var tt = t;
+                t.MouseDown += (s, e) => { if (e.Button == MouseButtons.Left) { drag = tt; downAt = Cursor.Position; dragging = false; } };
+                t.MouseMove += (s, e) => DragMove(tt);
+                t.MouseUp += (s, e) => DragEnd(tt, e);
+            }
+        }
+
+        /// <summary>Places lanes and tiles for this width; returns the height the board needs (shrinking tiles to fit maxH).</summary>
+        public int Arrange(int width, int maxH)
+        {
+            counts = new int[4];
+            foreach (var t in tiles) counts[LaneOf(t.App)]++;
+            int gap = Theme.S(12), lanePad = Theme.S(10), head = Theme.S(50);
+
+            // widths: a minimum per lane (empty lanes stay visible as drop targets), the rest shared by app count
+            int total = Math.Max(4, width - 3 * gap);
+            int minEmpty = Theme.S(150), minFull = Theme.S(220);
+            var w = new int[4];
+            int sumMin = 0;
+            for (int i = 0; i < 4; i++) { w[i] = counts[i] > 0 ? minFull : minEmpty; sumMin += w[i]; }
+            if (sumMin > total) { for (int i = 0; i < 4; i++) w[i] = w[i] * total / sumMin; }
+            else
+            {
+                int extra = total - sumMin, n = tiles.Count;
+                for (int i = 0; i < 4; i++) w[i] += n == 0 ? extra / 4 : extra * counts[i] / n;
+            }
+
+            int th = Theme.S(64), tgap = Theme.S(8), rowsMax = 1;
+            int[] cols = new int[4];
+            for (float k = 1f; ; k -= 0.05f)
+            {
+                th = Math.Max(Theme.S(38), (int)(Theme.S(64) * k));
+                int twMin = Math.Max(Theme.S(150), (int)(Theme.S(230) * k));
+                rowsMax = 1;
+                for (int i = 0; i < 4; i++)
+                {
+                    int inner = w[i] - 2 * lanePad;
+                    cols[i] = Math.Max(1, (inner + tgap) / (twMin + tgap));
+                    int rows = Math.Max(1, (int)Math.Ceiling(counts[i] / (double)cols[i]));
+                    rowsMax = Math.Max(rowsMax, rows);
+                }
+                if (head + rowsMax * th + (rowsMax - 1) * tgap + lanePad <= maxH || k <= 0.5f) break;
+            }
+            int height = head + rowsMax * th + (rowsMax - 1) * tgap + lanePad;
+
+            int x = 0;
+            for (int i = 0; i < 4; i++) { lanes[i] = new Rectangle(x, 0, w[i], height); x += w[i] + gap; }
+            var seen = new int[4];
+            foreach (var t in tiles)
+            {
+                int li = LaneOf(t.App), idx = seen[li]++;
+                int c = Math.Min(cols[li], Math.Max(1, counts[li]));
+                int inner = w[li] - 2 * lanePad;
+                int tw = (inner - (c - 1) * tgap) / c;
+                if (t == drag && dragging) continue;
+                t.SetBounds(lanes[li].X + lanePad + (idx % c) * (tw + tgap), head + (idx / c) * (th + tgap), tw, th);
+            }
+            Invalidate();
+            return height;
+        }
+
+        int LaneAt(Point client)
+        {
+            for (int i = 0; i < 4; i++) if (lanes[i].Contains(client)) return i;
+            return -1;
+        }
+
+        void DragMove(AppTile t)
+        {
+            if (drag != t || t.DownOnPosition || (Control.MouseButtons & MouseButtons.Left) == 0) return;
+            if (!dragging)
+            {
+                if (Math.Abs(Cursor.Position.X - downAt.X) < Theme.S(6) && Math.Abs(Cursor.Position.Y - downAt.Y) < Theme.S(6)) return;
+                dragging = true;
+                grabOffset = t.PointToClient(downAt);
+                t.Capture = true;
+                t.BringToFront();
+                t.Cursor = Cursors.SizeAll;
+            }
+            var p = PointToClient(Cursor.Position);
+            t.Location = new Point(p.X - grabOffset.X, p.Y - grabOffset.Y);
+            int hl = LaneAt(p);
+            if (hl != hotLane) { hotLane = hl; Invalidate(); }
+        }
+
+        void DragEnd(AppTile t, MouseEventArgs e)
+        {
+            if (drag != t) return;
+            bool was = dragging;
+            drag = null; dragging = false;
+            t.Capture = false;
+            t.Cursor = Cursors.Hand;
+            int target = hotLane; hotLane = -1;
+            if (!was)
+            {
+                if (e.Button == MouseButtons.Left) { var h = TileClicked; if (h != null) h(t); }
+                return;
+            }
+            if (target >= 0 && target != LaneOf(t.App))
+            {
+                var h = Moved; if (h != null) h(t.App, Modes[target]);
+            }
+            if (Parent != null) Parent.PerformLayout();   // snap into place (or back)
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.Clear(BackColor);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            for (int i = 0; i < 4; i++)
+            {
+                var r = lanes[i];
+                if (r.Width <= 0) continue;
+                bool hot = dragging && i == hotLane;
+                Theme.FillRound(g, hot ? Theme.Alpha(Theme.Accent, 28) : Theme.Bg, new RectangleF(r.X + 0.5f, r.Y + 0.5f, r.Width - 1, r.Height - 1), Theme.S(12),
+                    hot ? Theme.Accent : Theme.CardBorder);
+                Color c = i == 0 ? Theme.Accent : Theme.Purple;
+                int px = r.X + Theme.S(14);
+                using (var b = new SolidBrush(c)) g.FillEllipse(b, px, r.Y + Theme.S(15), Theme.S(8), Theme.S(8));
+                var title = Titles[i].ToUpperInvariant();
+                var flags = TextFormatFlags.Left | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
+                int tw = TextRenderer.MeasureText(g, title, Theme.F9S, Size.Empty, TextFormatFlags.NoPadding).Width;
+                TextRenderer.DrawText(g, title, Theme.F9S, new Rectangle(px + Theme.S(14), r.Y + Theme.S(10), r.Width - Theme.S(60), Theme.S(18)), Theme.Text, flags);
+                // count badge
+                string n = counts[i].ToString();
+                var badge = new Rectangle(Math.Min(px + Theme.S(14) + tw + Theme.S(8), r.Right - Theme.S(34)), r.Y + Theme.S(9), Theme.S(22), Theme.S(18));
+                Theme.FillRound(g, Theme.Raised, badge, Theme.S(9), Theme.CardBorder);
+                TextRenderer.DrawText(g, n, Theme.F8, badge, Theme.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+                TextRenderer.DrawText(g, Hints[i], Theme.F8, new Rectangle(px, r.Y + Theme.S(30), r.Width - Theme.S(24), Theme.S(16)), Theme.Muted, flags);
+                if (counts[i] == 0 || (dragging && drag != null && LaneOf(drag.App) == i && counts[i] == 1))
+                    TextRenderer.DrawText(g, "Drag apps here", Theme.F9, new Rectangle(r.X, r.Y + Theme.S(50), r.Width, r.Height - Theme.S(56)),
+                        hot ? Theme.AccentInk : Theme.Faint, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+            }
+        }
+    }
+}
