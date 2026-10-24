@@ -72,7 +72,7 @@ namespace FlightDeck
         {
             var sb = new StringBuilder();
             sb.AppendLine("[" + a.Name + "]");
-            sb.AppendLine("  enabled=" + a.Enabled + " admin=" + a.Admin + " autoClose=" + a.CloseOnEnd + " wait=" + a.Delay + "s");
+            sb.AppendLine("  enabled=" + a.Enabled + " admin=" + a.Admin + " autoClose=" + a.CloseOnEnd + " placeAfter=" + a.Delay + "s start=" + a.StartLabel);
             sb.AppendLine("  path=" + a.Path + (a.Args != "" ? "  args=" + a.Args : ""));
             sb.AppendLine("  process=\"" + a.Process + "\"" + (a.Title != "" ? "  titleFilter=\"" + a.Title + "\"" : ""));
             sb.AppendLine("  saved=" + (a.HasPos ? a.X + "," + a.Y + " " + a.W + "x" + a.H + (a.Maximized ? " maximized" : "") + "  (" + Util.Placement(a) + ")" : "none"));

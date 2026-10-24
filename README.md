@@ -23,11 +23,11 @@ everything again when you land. It works with any Windows program, not just sim 
 
 - **Start Flight** — opens every app that isn't running, waits for each window and puts it back in its exact saved position and size (apps already open are moved too).
 - **End Flight** — closes your add-ons. Apps that hide in the system tray are asked to exit the way Windows does at shutdown, so they save and quit cleanly. Forcing an app closed is only a last resort, and never happens while the simulator is open (that can crash the sim).
-- **Wait for SimConnect** — a toggle per app in the Apps list: open it only once the simulator is ready for add-ons (during its main loading), not right away.
+- **Start timing** — the START column decides when each app opens: right away, N seconds after Start Flight (you can even put the simulator itself in the list and open it after your pre-flight tools), when the sim is ready for add-ons (SimConnect), or once your flight has loaded and you're in the cockpit.
 - **Pixel-exact layouts** — works with Windows 11 snap layouts: snapped and resized windows come back edge to edge.
 - **Stacking order** — drag the apps in the list to choose which window stays in front; applied after the slowest app has settled.
 - **Step-by-step guide** on first run and for new profiles, right where your apps will appear.
-- **Capture windows**, **drag & drop** an .exe or shortcut, **Grab position**, per-app **Wait**, and a **Position** button for apps reopened mid-flight.
+- **Capture windows**, **drag & drop** an .exe or shortcut, **Grab position**, per-app **Place after** delay, and a **Position** button for apps reopened mid-flight.
 - **Tray-aware** — apps that start minimized to the tray are brought out automatically.
 - **Administrator apps** — supported; FlightDeck asks Windows once, then starts elevated without prompting again.
 - **Profiles**, layout map of your monitors, Dark/Light themes with your own accent colour, system-tray mode (minimize to tray), Start/End Flight desktop shortcuts, built-in log & diagnostics.

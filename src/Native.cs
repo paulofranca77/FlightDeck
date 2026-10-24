@@ -155,7 +155,10 @@ namespace FlightDeck
         /// its SimConnect pipe during its main load, so this is the moment add-ons can safely connect.
         /// Only looks at the pipe's name: nothing connects to the simulator.
         /// </summary>
-        public static bool SimConnectReady()
+        public static bool SimConnectReady() { return SimConnectPipe() != null; }
+
+        /// <summary>Name of the simulator's SimConnect pipe (without the \\.\pipe\ prefix), or null when it isn't up.</summary>
+        public static string SimConnectPipe()
         {
             try
             {
@@ -165,8 +168,16 @@ namespace FlightDeck
                 {
                     try
                     {
-                        do { if (d.name != null && d.name.IndexOf("SimConnect", StringComparison.OrdinalIgnoreCase) >= 0) return true; }
+                        string any = null;
+                        do
+                        {
+                            string n = d.name;
+                            if (n == null || !n.EndsWith("SimConnect", StringComparison.OrdinalIgnoreCase)) continue;
+                            if (n.IndexOf("Flight Simulator", StringComparison.OrdinalIgnoreCase) >= 0) return n;   // MSFS 2020 / 2024
+                            if (any == null) any = n;                                                                   // P3D, FSX…
+                        }
                         while (FindNextFile(h, out d));
+                        if (any != null) return any;
                     }
                     finally { FindClose(h); }
                 }
@@ -175,11 +186,12 @@ namespace FlightDeck
             // fallback: the default MSFS pipe (exists but busy = 121/231 also counts as up)
             try
             {
-                if (WaitNamedPipe(@"\\.\pipe\Microsoft Flight Simulator\SimConnect", 1)) return true;
+                const string def = @"Microsoft Flight Simulator\SimConnect";
+                if (WaitNamedPipe(@"\\.\pipe\" + def, 1)) return def;
                 int err = Marshal.GetLastWin32Error();
-                return err == 121 || err == 231;
+                return err == 121 || err == 231 ? def : null;
             }
-            catch { return false; }
+            catch { return null; }
         }
         public static readonly IntPtr HWND_BROADCAST = new IntPtr(0xffff);
 

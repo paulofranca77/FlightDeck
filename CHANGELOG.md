@@ -4,6 +4,19 @@ FlightDeck was built over a few days in October 2026 through a conversation betw
 (who tested every build on his own setup) and Claude, the AI that wrote the code. These are the steps it went
 through. Only v2.0 is published as a download; the earlier builds were private test versions.
 
+## v2.4.0
+- **START column** (from a user's feedback): choose when each app opens.
+  - **Right away** — as before.
+  - **After N seconds** — e.g. open your pre-flight tools first and the simulator itself 2 minutes later.
+  - **Sim ready** — once the simulator is ready for add-ons (SimConnect), during its main loading.
+  - **Flight loaded** — once you're in the cockpit. FlightDeck reads only the camera state through a small
+    built-in SimConnect connection (no SimConnect.dll needed) and disconnects when it's done. It never
+    changes anything in the simulator.
+- The old **WAIT** column is now called **PLACE AFTER**: seconds to wait after an app's window appears before
+  moving it into place. It never delayed opening the app, which the old name suggested.
+- Tiles show what's still coming ("Starts in 40 s", "Waiting for flight"), and a notification tells you when
+  they open.
+
 ## v2.3.0
 - **Safer End Flight.** Apps that go to the tray instead of closing are now asked to exit the way Windows
   does at shutdown, so they save and quit cleanly (DynamicLOD gets to restore your LODs). Forcing an app

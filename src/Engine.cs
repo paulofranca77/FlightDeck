@@ -32,7 +32,47 @@ namespace FlightDeck
         public int H { get; set; }
         public bool Maximized { get; set; }
         public double Delay { get; set; }
-        public bool WaitForSim { get; set; }   // open only once the simulator's SimConnect is up
+        /// <summary>When Start Flight opens the app: "now", "delay" (StartDelay seconds later), "sim" (SimConnect is up) or "flight" (flight loaded).</summary>
+        public string StartMode { get { return string.IsNullOrEmpty(startMode) ? "now" : startMode; } set { startMode = value; } }
+        string startMode;
+        public int StartDelay { get; set; }
+        /// <summary>v2.3 setting, kept so older config files load as "sim".</summary>
+        public bool WaitForSim
+        {
+            get { return StartMode == "sim"; }
+            set { if (value) StartMode = "sim"; else if (StartMode == "sim") StartMode = "now"; }
+        }
+
+        [ScriptIgnore]
+        public string StartLabel
+        {
+            get
+            {
+                switch (StartMode)
+                {
+                    case "delay": return "After " + StartDelay + " s";
+                    case "sim": return "Sim ready";
+                    case "flight": return "Flight loaded";
+                    default: return "Right away";
+                }
+            }
+        }
+
+        /// <summary>"in 30 s", "when the simulator is ready"… for messages.</summary>
+        [ScriptIgnore]
+        public string WhenText
+        {
+            get
+            {
+                switch (StartMode)
+                {
+                    case "delay": return StartDelay + " s after Start Flight";
+                    case "sim": return "when the simulator is ready (SimConnect)";
+                    case "flight": return "when your flight has loaded";
+                    default: return "right away";
+                }
+            }
+        }
 
         public AppEntry()
         {
@@ -572,7 +612,7 @@ namespace FlightDeck
             var apps = held.ToList();
             var stack = profile.Where(a => a.Enabled).ToList();
             Deferred = new List<AppEntry>();
-            Run("simready", () => DoStart(apps, false, stack));
+            Run("later", () => DoStart(apps, false, stack));
         }
 
         class Job
@@ -596,10 +636,26 @@ namespace FlightDeck
                    Math.Abs(w.Frame.Width - a.W) <= tol && Math.Abs(w.Frame.Height - a.H) <= tol;
         }
 
+        static bool MustWait(AppEntry a)
+        {
+            switch (a.StartMode)
+            {
+                case "delay": return a.StartDelay > 0;
+                case "sim": return !Native.SimConnectReady();
+                case "flight": return !SimLink.FlightLoaded;
+                default: return false;
+            }
+        }
+
+        public static string WaitStatus(AppEntry a)
+        {
+            return a.StartMode == "flight" ? "Waiting for flight" : a.StartMode == "sim" ? "Waiting for sim" : "Starts later";
+        }
+
         void DoStart(List<AppEntry> apps, bool positionOnly, List<AppEntry> stackApps)
         {
             if (apps.Count == 0) { L("No apps enabled — add some on the Apps page."); return; }
-            L(positionOnly ? "Applying layout…" : stackApps != null ? "Opening the apps that waited for the simulator…" : "Starting flight…");
+            L(positionOnly ? "Applying layout…" : stackApps != null ? "Opening " + string.Join(", ", apps.Select(a => a.Name)) + "…" : "Starting flight…");
             bool elevated = Util.IsElevated();
             var jobs = new List<Job>();
             const int U = 8;   // per app: launching, opened (3), window found (4), placement passes (5-7), ready (8)
@@ -620,13 +676,13 @@ namespace FlightDeck
                     Up(a, 3, a.Name + " is in the tray…");
                     continue;
                 }
-                if (w == null && !positionOnly && a.WaitForSim && !Native.SimConnectReady())
+                if (w == null && !positionOnly && stackApps == null && MustWait(a))
                 {
-                    // "Wait for SimConnect": opened later, when the simulator is ready for add-ons
+                    // START column: this app opens later (after a delay, when the sim is ready, or once the flight has loaded)
                     Deferred.Add(a);
-                    S(a, "Waiting for sim");
-                    L(a.Name + " will open when the simulator is ready (SimConnect).");
-                    Up(a, U, a.Name + " will open when the sim is ready");
+                    S(a, WaitStatus(a));
+                    L(a.Name + " will open " + a.WhenText + ".");
+                    Up(a, U, a.Name + " opens " + a.WhenText);
                     continue;
                 }
                 if (w == null && !positionOnly)
@@ -749,7 +805,7 @@ namespace FlightDeck
                     if ((DateTime.Now - j.VerifyStart.Value).TotalSeconds > settleSeconds)
                     {
                         jobs.Remove(j); S(a, "Error");
-                        L(a.Name + ": keeps moving away from its position (now " + Fr(w.Frame) + "). Try a longer WAIT for it.");
+                        L(a.Name + ": keeps moving away from its position (now " + Fr(w.Frame) + "). Try a longer PLACE AFTER for it (Apps page).");
                         continue;
                     }
                     if ((DateTime.Now - j.LastFix).TotalSeconds >= 1.2)
@@ -775,7 +831,7 @@ namespace FlightDeck
             if (order.Count > 1)
             {
                 // Final step, after the last (slowest) app was placed: set which window is in front.
-                var bs = BeforeStacking; if (bs != null) bs(positionOnly ? "apply" : stackApps != null ? "simready" : "start");
+                var bs = BeforeStacking; if (bs != null) bs(positionOnly ? "apply" : stackApps != null ? "later" : "start");
                 foreach (var fa in apps) units[fa] = U;
                 UpExtra(1, "Setting the window order…");
                 Thread.Sleep(1500);
@@ -787,10 +843,10 @@ namespace FlightDeck
                 L("Stacking order applied (front → back): " + string.Join(" › ", order.Select(a => a.Name)));
             }
             foreach (var fa in apps) units[fa] = U;
-            UpExtra(2, positionOnly ? "Layout applied" : Deferred.Count > 0 ? "Waiting for the sim" : "All set");
+            UpExtra(2, positionOnly ? "Layout applied" : Deferred.Count > 0 ? "Ready — more apps open later" : "All set");
             if (positionOnly) L("Layout applied.");
-            else if (Deferred.Count > 0) L("Ready — waiting for the simulator to open " + string.Join(", ", Deferred.Select(a => a.Name)) + ". This happens during the sim's main loading.");
-            else L(stackApps != null ? "All apps are open." : "Flight ready. Have a good one ✈");
+            else if (Deferred.Count > 0) L("Ready. Still to open: " + string.Join(", ", Deferred.Select(a => a.Name + " (" + a.WhenText + ")")) + ".");
+            else L(stackApps != null ? "Done." : "Flight ready. Have a good one ✈");
         }
 
         void NotFound(Job j)

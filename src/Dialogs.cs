@@ -15,7 +15,9 @@ namespace FlightDeck
         public readonly AppEntry App;
         readonly Panel body;
         readonly TextField fName, fPath, fArgs, fDelay, fProc, fTitle, fX, fY, fW, fH;
-        readonly Toggle tEnabled, tAdmin, tClose, tMax, tSim;
+        readonly Toggle tEnabled, tAdmin, tClose, tMax;
+        readonly StartPicker startPick;
+        readonly AppEntry startModel;
         readonly DarkCombo monitor;
         readonly LayoutMap map;
         readonly Label posState;
@@ -50,7 +52,7 @@ namespace FlightDeck
             y += Theme.S(66);
 
             fArgs = Field("Arguments  (optional)", app.Args, pad, y, half);
-            fDelay = Field("Wait before positioning (seconds)", app.Delay.ToString(System.Globalization.CultureInfo.InvariantCulture), pad + half + Theme.S(16), y, half);
+            fDelay = Field("Place after (seconds once the window appears)", app.Delay.ToString(System.Globalization.CultureInfo.InvariantCulture), pad + half + Theme.S(16), y, half);
             y += Theme.S(66);
             fProc = Field("Process name  (as in Task Manager, without .exe)", app.Process, pad, y, half);
             fTitle = Field("Window title contains  (optional)", app.Title, pad + half + Theme.S(16), y, half);
@@ -60,11 +62,14 @@ namespace FlightDeck
             tAdmin = ToggleWithLabel("Run as administrator", app.Admin, pad + Theme.S(250), y);
             tClose = ToggleWithLabel("Close on End Flight", app.CloseOnEnd, pad + Theme.S(480), y);
             y += Theme.S(40);
-            tSim = ToggleWithLabel("Wait for SimConnect", app.WaitForSim, pad, y);
-            var simHint = Theme.MakeLabel("Opens this app only when the simulator is ready for add-ons (during its main loading), not right away.", Theme.F9, Theme.Muted, Theme.Bg);
+            var startLbl = Theme.MakeLabel("Open", Theme.F10, Theme.SubText, Theme.Bg);
+            startLbl.Location = new Point(pad, y + Theme.S(6));
+            startModel = new AppEntry { StartMode = app.StartMode, StartDelay = app.StartDelay };   // edited here, saved on Save
+            startPick = new StartPicker(startModel) { Width = Theme.S(170), Location = new Point(pad + Theme.S(60), y) };
+            var simHint = Theme.MakeLabel("Right away, a few seconds after Start Flight, when the simulator is ready for add-ons (SimConnect), or once your flight has loaded.", Theme.F9, Theme.Muted, Theme.Bg);
             simHint.AutoSize = false;
             simHint.SetBounds(pad + Theme.S(250), y - Theme.S(2), full - Theme.S(250), Theme.S(38));
-            body.Controls.Add(simHint);
+            body.Controls.Add(startLbl); body.Controls.Add(startPick); body.Controls.Add(simHint);
             y += Theme.S(48);
 
             Divider(pad, y, full); y += Theme.S(18);
@@ -266,7 +271,7 @@ namespace FlightDeck
             if (App.Process.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) App.Process = App.Process.Substring(0, App.Process.Length - 4);
             App.Title = fTitle.Value.Trim();
             App.Delay = Math.Max(0, fDelay.DoubleValue(2));
-            App.Enabled = tEnabled.Checked; App.Admin = tAdmin.Checked; App.CloseOnEnd = tClose.Checked; App.WaitForSim = tSim.Checked;
+            App.Enabled = tEnabled.Checked; App.Admin = tAdmin.Checked; App.CloseOnEnd = tClose.Checked; App.StartMode = startModel.StartMode; App.StartDelay = startModel.StartDelay;
             App.HasPos = App.W > 0 && App.H > 0;
             DialogResult = DialogResult.OK;
             Close();

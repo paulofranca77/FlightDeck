@@ -106,17 +106,17 @@ namespace FlightDeck
     /// <summary>Shared column positions for the apps table.</summary>
     static class Cols
     {
-        // 0 grip · 1 name · 2 path · 3 position · 4 wait · 5 autorun · 6 admin · 7 auto-close · 8 simconnect · 9 actions
+        // 0 grip · 1 name · 2 path · 3 position · 4 place after · 5 autorun · 6 admin · 7 auto-close · 8 start · 9 actions
         public static int[] X(int w)
         {
-            int grip = Theme.S(32), wait = Theme.S(78), tog = Theme.S(84), act = Theme.S(80);
-            int flex = Math.Max(Theme.S(320), w - grip - wait - tog * 4 - act - Theme.S(20));
-            int nameW = (int)(flex * 0.31), pathW = (int)(flex * 0.40);
+            int grip = Theme.S(32), wait = Theme.S(90), tog = Theme.S(84), start = Theme.S(140), act = Theme.S(80);
+            int flex = Math.Max(Theme.S(300), w - grip - wait - tog * 3 - start - act - Theme.S(20));
+            int nameW = (int)(flex * 0.32), pathW = (int)(flex * 0.28);
             int x0 = Theme.S(10), x1 = x0 + grip;
             int x4 = x1 + flex;
-            return new[] { x0, x1, x1 + nameW, x1 + nameW + pathW, x4, x4 + wait, x4 + wait + tog, x4 + wait + tog * 2, x4 + wait + tog * 3, x4 + wait + tog * 4 };
+            return new[] { x0, x1, x1 + nameW, x1 + nameW + pathW, x4, x4 + wait, x4 + wait + tog, x4 + wait + tog * 2, x4 + wait + tog * 3, x4 + wait + tog * 3 + start };
         }
-        public static readonly string[] Headers = { "", "NAME", "PATH", "POSITION", "WAIT", "AUTORUN", "ADMIN", "AUTO-CLOSE", "SIMCONNECT", "" };
+        public static readonly string[] Headers = { "", "NAME", "PATH", "POSITION", "PLACE AFTER", "AUTORUN", "ADMIN", "AUTO-CLOSE", "START", "" };
     }
 
     class TableHeader : Owner
@@ -137,7 +137,8 @@ namespace FlightDeck
     {
         public readonly AppEntry App;
         public readonly int Rank;
-        public readonly Toggle Autorun = new Toggle(), Admin = new Toggle(), AutoClose = new Toggle(), SimWait = new Toggle();
+        public readonly Toggle Autorun = new Toggle(), Admin = new Toggle(), AutoClose = new Toggle();
+        public readonly StartPicker Start;
         public readonly TextField Wait;
         public readonly FlatButton BtnEdit = new FlatButton(null, Theme.Glyph.Edit, BtnStyle.Ghost, 32);
         public readonly FlatButton BtnDelete = new FlatButton(null, Theme.Glyph.Delete, BtnStyle.Ghost, 32);
@@ -156,14 +157,16 @@ namespace FlightDeck
             Height = Theme.S(60);
             Cursor = Cursors.Hand;
             Wait = new TextField(a.Delay.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)) { Width = Theme.S(48), Height = Theme.S(32) };
-            Autorun.Checked = a.Enabled; Admin.Checked = a.Admin; AutoClose.Checked = a.CloseOnEnd; SimWait.Checked = a.WaitForSim;
-            SimWait.CheckedChanged += (s, e) => { App.WaitForSim = SimWait.Checked; Fire(); };
-            simTip.SetToolTip(SimWait, "Wait for SimConnect: open this app only when the simulator is ready for add-ons (during its main loading).");
+            Autorun.Checked = a.Enabled; Admin.Checked = a.Admin; AutoClose.Checked = a.CloseOnEnd;
+            Start = new StartPicker(a) { Width = Theme.S(128) };
+            Start.Changed += Fire;
+            simTip.SetToolTip(Start, "When Start Flight opens this app: right away, a few seconds later, when the simulator is ready (SimConnect), or once your flight has loaded.");
+            simTip.SetToolTip(Wait, "Seconds to wait after the app's window appears before moving it into place.");
             Autorun.CheckedChanged += (s, e) => { App.Enabled = Autorun.Checked; Fire(); };
             Admin.CheckedChanged += (s, e) => { App.Admin = Admin.Checked; Fire(); };
             AutoClose.CheckedChanged += (s, e) => { App.CloseOnEnd = AutoClose.Checked; Fire(); };
             Wait.ValueChanged += (s, e) => { App.Delay = Math.Max(0, Math.Min(600, Wait.DoubleValue(App.Delay))); Fire(); };
-            Controls.AddRange(new Control[] { Wait, Autorun, Admin, AutoClose, SimWait, BtnEdit, BtnDelete });
+            Controls.AddRange(new Control[] { Wait, Autorun, Admin, AutoClose, Start, BtnEdit, BtnDelete });
             foreach (Control c in Controls) { c.MouseEnter += (s, e) => SetHover(true); c.MouseLeave += (s, e) => CheckHover(); }
             Wait.Box.MouseEnter += (s, e) => SetHover(true);
         }
@@ -207,7 +210,7 @@ namespace FlightDeck
             Autorun.Location = new Point(x[5], ty);
             Admin.Location = new Point(x[6], ty);
             AutoClose.Location = new Point(x[7], ty);
-            SimWait.Location = new Point(x[8], ty);
+            Start.Location = new Point(x[8], (Height - Start.Height) / 2);
             int by = (Height - BtnEdit.Height) / 2;
             BtnEdit.Location = new Point(x[9], by);
             BtnDelete.Location = new Point(x[9] + BtnEdit.Width + Theme.S(2), by);
@@ -442,6 +445,75 @@ namespace FlightDeck
                 TextRenderer.DrawText(g, n.ToString(), Theme.F10S, new Rectangle(0, 0, Width, Height), Theme.AccentText,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
             }
+        }
+    }
+    /// <summary>
+    /// "When does this app open?" — Right away / After N s / Sim ready / Flight loaded.
+    /// Choosing "After…" asks for the number of seconds.
+    /// </summary>
+    class StartPicker : DarkCombo
+    {
+        static readonly string[] Modes = { "now", "delay", "sim", "flight" };
+        readonly AppEntry app;
+        bool loading;
+        int last;
+        public event Action Changed;
+
+        public StartPicker(AppEntry a)
+        {
+            app = a;
+            Font = Theme.F9;
+            ItemHeight = Theme.S(24);
+            loading = true;
+            Items.AddRange(new object[] { "Right away", DelayText(), "Sim ready", "Flight loaded" });
+            last = Math.Max(0, Array.IndexOf(Modes, a.StartMode));
+            SelectedIndex = last;
+            loading = false;
+        }
+
+        string DelayText() { return app.StartMode == "delay" ? "After " + app.StartDelay + " s" : "After a delay…"; }
+
+        protected override void OnSelectedIndexChanged(EventArgs e)
+        {
+            base.OnSelectedIndexChanged(e);
+            if (loading || SelectedIndex < 0) return;
+            int i = SelectedIndex;
+            if (i == 1)
+            {
+                // ask after the drop-down has closed
+                BeginInvoke(new Action(AskDelay));
+                return;
+            }
+            last = i;
+            app.StartMode = Modes[i];
+            Refill();
+            var h = Changed; if (h != null) h();
+        }
+
+        void AskDelay()
+        {
+            string v = PromptDialog.Ask(FindForm(), "Open after a delay",
+                "Seconds after you click Start Flight (e.g. 120 to open the sim 2 minutes later):",
+                (app.StartDelay > 0 ? app.StartDelay : 60).ToString());
+            int sec;
+            if (v != null && int.TryParse(v.Trim().TrimEnd('s', 'S').Trim(), out sec) && sec > 0 && sec <= 3600)
+            {
+                app.StartMode = "delay";
+                app.StartDelay = sec;
+                last = 1;
+                Refill();
+                var h = Changed; if (h != null) h();
+            }
+            else { loading = true; SelectedIndex = last; loading = false; }
+        }
+
+        void Refill()
+        {
+            loading = true;
+            Items[1] = DelayText();
+            SelectedIndex = last;
+            loading = false;
+            Invalidate();
         }
     }
 }

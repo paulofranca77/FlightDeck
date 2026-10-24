@@ -46,7 +46,7 @@ namespace FlightDeck
             Text = "FlightDeck";
             StartPosition = FormStartPosition.CenterScreen;
             ClientSize = new Size(Theme.S(1280), Theme.S(760));
-            MinimumSize = new Size(Theme.S(1180), Theme.S(660));
+            MinimumSize = new Size(Theme.S(1260), Theme.S(660));
             DoubleBuffered = true;
 
             BuildUI();
@@ -65,6 +65,7 @@ namespace FlightDeck
             // ---- runner ----
             Runner.Log += m => Ui(() => Log(m));
             Runner.Debug += m => Diagnostics.Write("  · " + m);
+            SimLink.Debug = m => Diagnostics.Write("  · " + m);
             FlightRunner.DebugSink = m => Diagnostics.Write("  · " + m);
             Diagnostics.Write("==== FlightDeck " + Application.ProductVersion + " started (elevated: " + Util.IsElevated() + ") ====");
             Runner.Status += (a, st) => Ui(() => { Live[a.Id] = st; Dash.RefreshStatus(); });
@@ -197,7 +198,7 @@ namespace FlightDeck
             AddNav("Apps", Theme.Glyph.Apps, AppsPg);
             AddNav("Layout", Theme.Glyph.Monitor, LayoutPg);
             navSettings = AddNav("Settings", Theme.Glyph.Settings, SettingsPg);
-            version = Theme.MakeLabel("v2.3.0" + (Util.IsElevated() ? "  ·  administrator" : ""), Theme.F9, Theme.Faint, Theme.Sidebar);
+            version = Theme.MakeLabel("v2.4.0" + (Util.IsElevated() ? "  ·  administrator" : ""), Theme.F9, Theme.Faint, Theme.Sidebar);
             sidebar.Controls.Add(version);
             sidebar.Resize += (s, e) => LayoutSidebar();
             LayoutSidebar();
@@ -364,6 +365,7 @@ namespace FlightDeck
             }
 
             StopSimWatch();
+            flightClock = DateTime.Now;
             Live.Clear();
             InFlight = true;
             flightProfile = Cfg.Active;
@@ -441,7 +443,7 @@ namespace FlightDeck
                 pendingSim = Runner.Deferred.ToList();
                 string readyText = pendingSim.Count == 0
                     ? "Your apps are in position. Right-click the FlightDeck icon to end the flight."
-                    : "Your apps are in position. " + Names(pendingSim) + " will open when the simulator is ready.";
+                    : "Your apps are in position. Still to open: " + string.Join(", ", pendingSim.Select(a => a.Name + " (" + a.StartLabel.ToLowerInvariant() + ")")) + ".";
                 if (pendingSim.Count > 0) StartSimWatch();
                 if (n == 0 && Visible)
                 {
@@ -462,9 +464,9 @@ namespace FlightDeck
                 }
             }
             else if (kind == "start") TopMost = false;
-            else if (kind == "simready" && !cancelled)
+            else if (kind == "later" && !cancelled)
             {
-                if (n == 0) { try { Toast.Show("Simulator ready ✈", "Opened and placed the apps that were waiting for the sim.", RestoreFromTray); } catch { } }
+                if (n == 0) { try { Toast.Show("Opened " + Names(laterBatch), pendingSim.Count == 0 ? "All your apps are open and in position." : "More apps open later: " + Names(pendingSim) + ".", RestoreFromTray); } catch { } }
                 else { RestoreFromTray(); try { Toast.Show("Simulator ready — check " + n + " app" + (n == 1 ? "" : "s"), "See the Activity log in FlightDeck for what went wrong.", RestoreFromTray); } catch { } }
             }
             else if (kind == "end")
@@ -483,7 +485,7 @@ namespace FlightDeck
                 t.Stop(); t.Dispose();
                 if (Runner.Busy) return;
                 Live.Clear();
-                foreach (var a in pendingSim) Live[a.Id] = "Waiting for sim";
+                ShowPending();
                 Dash.RefreshStatus();
             };
             t.Start();
@@ -491,8 +493,9 @@ namespace FlightDeck
 
         CelebrationOverlay celebration;
 
-        // ---------- "Wait for SimConnect" ----------
-        List<AppEntry> pendingSim = new List<AppEntry>();
+        // ---------- apps that open later (START column) ----------
+        List<AppEntry> pendingSim = new List<AppEntry>();   // waiting to be opened
+        DateTime flightClock;                               // when Start Flight was clicked ("After N s")
         Timer simWatch;
 
         static string Names(List<AppEntry> apps)
@@ -505,10 +508,12 @@ namespace FlightDeck
         {
             if (simWatch == null)
             {
-                simWatch = new Timer { Interval = 3000 };
+                simWatch = new Timer { Interval = 1000 };
                 simWatch.Tick += (s, e) => CheckSim();
             }
+            if (pendingSim.Any(a => a.StartMode == "flight")) SimLink.Start();
             simWatch.Start();
+            ShowPending();
             UpdateTrayText();
         }
 
@@ -516,23 +521,61 @@ namespace FlightDeck
         {
             if (simWatch != null) simWatch.Stop();
             pendingSim.Clear();
+            SimLink.Stop();
             UpdateTrayText();
+        }
+
+        bool Due(AppEntry a)
+        {
+            switch (a.StartMode)
+            {
+                case "delay": return (DateTime.Now - flightClock).TotalSeconds >= a.StartDelay;
+                case "sim": return Native.SimConnectReady();
+                case "flight": return SimLink.FlightLoaded;
+                default: return true;
+            }
+        }
+
+        /// <summary>Tile status for the apps still waiting ("Starts in 40 s", "Waiting for flight"…).</summary>
+        void ShowPending()
+        {
+            foreach (var a in pendingSim)
+            {
+                if (a.StartMode == "delay")
+                {
+                    int left = (int)Math.Ceiling(a.StartDelay - (DateTime.Now - flightClock).TotalSeconds);
+                    Live[a.Id] = left > 0 ? "Starts in " + (left >= 120 ? (left / 60) + " min" : left + " s") : "Starting";
+                }
+                else Live[a.Id] = FlightRunner.WaitStatus(a);
+            }
+            if (!Runner.Busy) Dash.RefreshStatus();
         }
 
         void CheckSim()
         {
             if (!InFlight || pendingSim.Count == 0) { StopSimWatch(); return; }
-            if (Runner.Busy || !Native.SimConnectReady()) return;
-            simWatch.Stop();
-            var held = pendingSim.ToList();
-            pendingSim.Clear();
+            ShowPending();
+            if (Runner.Busy) return;
+            var ready = pendingSim.Where(Due).ToList();
+            if (ready.Count == 0) return;
+            foreach (var a in ready) pendingSim.Remove(a);
+            if (!pendingSim.Any(a => a.StartMode == "flight")) SimLink.Stop();
+            if (pendingSim.Count == 0) simWatch.Stop();
             UpdateTrayText();
-            Log("The simulator is ready — opening " + Names(held) + "…");
-            runKind = "simready";
+
+            string why = ready.All(a => a.StartMode == "flight") ? "Your flight has loaded"
+                       : ready.All(a => a.StartMode == "sim") ? "The simulator is ready"
+                       : ready.All(a => a.StartMode == "delay") ? "Time's up"
+                       : "Ready";
+            Log(why + " — opening " + Names(ready) + "…");
+            laterBatch = ready;
+            runKind = "later";
             Dash.SetBusy(true);
-            Dash.ShowProgress(0, 1, "Simulator ready — opening " + Names(held) + "…", false);
-            Runner.StartDeferred(held, (flightProfile ?? Cfg.Active).Apps);
+            Dash.ShowProgress(0, 1, "Opening " + Names(ready) + "…", false);
+            Runner.StartDeferred(ready, (flightProfile ?? Cfg.Active).Apps);
         }
+
+        List<AppEntry> laterBatch = new List<AppEntry>();
 
         void Celebrate(int apps, Action then, bool landing = false)
         {
@@ -589,7 +632,7 @@ namespace FlightDeck
         void UpdateTrayText()
         {
             if (tray == null) return;
-            string t = "FlightDeck · " + (InFlight ? (pendingSim != null && pendingSim.Count > 0 ? "waiting for the sim · " : "in flight · ") : "") + Cfg.Active.Name;
+            string t = "FlightDeck · " + (InFlight ? (pendingSim != null && pendingSim.Count > 0 ? "more apps open later · " : "in flight · ") : "") + Cfg.Active.Name;
             tray.Text = t.Length > 63 ? t.Substring(0, 62) + "…" : t;
         }
 
