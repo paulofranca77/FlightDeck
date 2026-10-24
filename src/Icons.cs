@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 
@@ -31,14 +30,9 @@ namespace FlightDeck
             {
                 string raw = Environment.ExpandEnvironmentVariables((a.Path ?? "").Trim().Trim('"'));
                 if (!a.IsUrl && raw != "" && File.Exists(raw)) p = raw;
-                else if (!string.IsNullOrWhiteSpace(a.Process))
-                {
-                    foreach (var pr in Process.GetProcessesByName(a.Process))
-                    {
-                        if (p == "") p = Native.GetProcessPath(pr.Id);
-                        pr.Dispose();
-                    }
-                }
+                else
+                    foreach (var pid in Engine.Pids(a))
+                        if (p == "") p = Native.GetProcessPath(pid);
             }
             catch { p = ""; }
             paths[key] = p;

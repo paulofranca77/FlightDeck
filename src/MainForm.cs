@@ -380,14 +380,7 @@ namespace FlightDeck
 
         static bool RunsElevated(AppEntry a)
         {
-            if (string.IsNullOrWhiteSpace(a.Process)) return false;
-            bool any = false;
-            foreach (var p in Process.GetProcessesByName(a.Process))
-            {
-                if (!any && Diagnostics.Elevated(p.Id) != "no") any = true;
-                p.Dispose();
-            }
-            return any;
+            return Engine.Pids(a).Any(pid => Diagnostics.Elevated(pid) != "no");
         }
 
         /// <summary>Restarts FlightDeck as administrator and (optionally) continues with "start"/"end".</summary>
@@ -798,30 +791,35 @@ namespace FlightDeck
                 ShowPage(AppsPg);
                 return;
             }
-            var w = Engine.FindWindow(a);
-            if (w == null && Engine.IsRunning(a))
-            {
-                if (Engine.RevealFromTray(a) == null)
-                {
-                    var pids = new HashSet<int>();
-                    foreach (var p in Process.GetProcessesByName(a.Process)) { pids.Add(p.Id); p.Dispose(); }
-                    Action<string> dbg = m => Diagnostics.Write("  · " + m);
-                    if (Native.PokeTrayIcon(pids, false, dbg) > 0) System.Threading.Thread.Sleep(1500);
-                    if (Engine.FindWindow(a) == null && Native.PokeTrayIcon(pids, true, dbg) > 0) System.Threading.Thread.Sleep(1500);
-                    if (Engine.FindWindow(a) == null && Tray.ClickIcon(a, dbg) != null) System.Threading.Thread.Sleep(1200);
-                }
-                System.Threading.Thread.Sleep(300);
-                w = Engine.FindWindow(a);
-                if (w != null) Log(a.Name + " was waiting in the tray — opened its window.");
-            }
-            if (w == null)
-            {
-                Toast.Show(a.Name + " isn't open", "Open it first, then click Position again.", null);
-                return;
-            }
             Live[a.Id] = "Positioning"; Dash.RefreshStatus();
+            // all of this can take a few seconds (tray apps): keep the window responsive
             new System.Threading.Thread(() =>
             {
+                var w = Engine.FindWindow(a);
+                bool fromTray = false;
+                if (w == null && Engine.IsRunning(a))
+                {
+                    if (Engine.RevealFromTray(a) == null)
+                    {
+                        var pids = Engine.Pids(a);
+                        Action<string> dbg = m => Diagnostics.Write("  · " + m);
+                        if (Native.PokeTrayIcon(pids, false, dbg) > 0) System.Threading.Thread.Sleep(1500);
+                        if (Engine.FindWindow(a) == null && Native.PokeTrayIcon(pids, true, dbg) > 0) System.Threading.Thread.Sleep(1500);
+                        if (Engine.FindWindow(a) == null && Tray.ClickIcon(a, dbg) != null) System.Threading.Thread.Sleep(1200);
+                    }
+                    System.Threading.Thread.Sleep(300);
+                    w = Engine.FindWindow(a);
+                    fromTray = w != null;
+                }
+                if (w == null)
+                {
+                    Ui(() =>
+                    {
+                        Live.Remove(a.Id); Dash.RefreshStatus();
+                        Toast.Show(a.Name + " isn't open", "Open it first, then click Position again.", null);
+                    });
+                    return;
+                }
                 bool ok = Native.Place(w.Handle, a.X, a.Y, a.W, a.H, a.Maximized);
                 if (ok)
                 {
@@ -832,6 +830,7 @@ namespace FlightDeck
                 Ui(() =>
                 {
                     Live.Remove(a.Id); Dash.RefreshStatus();
+                    if (fromTray) Log(a.Name + " was waiting in the tray — opened its window.");
                     Log(ok ? a.Name + ": moved to its saved position." :
                         a.Name + ": Windows refused to move it — it probably runs as administrator. Turn on \"Run FlightDeck as administrator\" in Settings.");
                 });

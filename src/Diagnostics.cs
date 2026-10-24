@@ -77,7 +77,7 @@ namespace FlightDeck
             sb.AppendLine("  process=\"" + a.Process + "\"" + (a.Title != "" ? "  titleFilter=\"" + a.Title + "\"" : ""));
             sb.AppendLine("  saved=" + (a.HasPos ? a.X + "," + a.Y + " " + a.W + "x" + a.H + (a.Maximized ? " maximized" : "") + "  (" + Util.Placement(a) + ")" : "none"));
             if (string.IsNullOrWhiteSpace(a.Process)) { sb.AppendLine("  (no process name)"); return sb.ToString(); }
-            var procs = Process.GetProcessesByName(a.Process);
+            var procs = Engine.Processes(a);
             if (procs.Length == 0) sb.AppendLine("  running: no");
             var pids = new HashSet<int>();
             foreach (var p in procs)

@@ -16,6 +16,10 @@ through. Only v2.0 is published as a download; the earlier builds were private t
   moving it into place. It never delayed opening the app, which the old name suggested.
 - Tiles show what's still coming ("Starts in 40 s", "Waiting for flight"), and a notification tells you when
   they open.
+- **Code clean-up** after many quick iterations: unused code removed, duplicated helpers merged (one place
+  to find an app's processes, which also accepts names written with ".exe"), the engine split into smaller
+  files, and the Dashboard's Position button no longer freezes the window while it opens an app from the tray.
+  If the brand font can't load, the FlightDeck title now falls back to a system font instead of disappearing.
 
 ## v2.3.0
 - **Safer End Flight.** Apps that go to the tray instead of closing are now asked to exit the way Windows

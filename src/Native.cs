@@ -98,20 +98,6 @@ namespace FlightDeck
         [DllImport("user32.dll", SetLastError = true)]
         static extern IntPtr SendMessageTimeout(IntPtr h, uint msg, IntPtr w, IntPtr l, uint flags, uint timeout, out IntPtr result);
 
-        /// <summary>Every top-level window of these processes, hidden ones included (tray apps keep theirs hidden).</summary>
-        public static List<IntPtr> AllWindowsOf(HashSet<int> pids)
-        {
-            var list = new List<IntPtr>();
-            EnumWindows(delegate (IntPtr h, IntPtr l)
-            {
-                uint pid;
-                GetWindowThreadProcessId(h, out pid);
-                if (pids.Contains((int)pid)) list.Add(h);
-                return true;
-            }, IntPtr.Zero);
-            return list;
-        }
-
         /// <summary>
         /// Tells the processes that Windows is closing them, the same messages a shutdown or an
         /// installer restart sends. Well-behaved apps (WPF, WinForms, Electron, Chromium) save and
@@ -123,7 +109,7 @@ namespace FlightDeck
             const uint SMTO_ABORTIFHUNG = 0x0002;
             var ENDSESSION_CLOSEAPP = new IntPtr(1);
             int n = 0;
-            var wins = AllWindowsOf(pids);
+            var wins = AllWindows(pids).Select(w => w.Handle).ToList();   // hidden ones too: tray apps keep theirs hidden
             foreach (var h in wins)
             {
                 IntPtr r;

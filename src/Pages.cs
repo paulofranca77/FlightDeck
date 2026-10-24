@@ -67,7 +67,7 @@ namespace FlightDeck
         readonly FlatButton btnStart, btnEnd, btnApply;
         readonly ProfileButton profileBtn;
         readonly Card appsCard, logCard;
-        readonly Label appsTitle, appsSub, emptyLbl, logTitle, warnLbl;
+        readonly Label appsTitle, appsSub, logTitle, warnLbl;
         readonly ProgressStrip progress;
         readonly Timer hideProgress;
         readonly Panel tiles;
@@ -92,7 +92,6 @@ namespace FlightDeck
             appsCard = new Card();
             appsTitle = Theme.MakeLabel("Companion apps", Theme.F11S, Theme.Text, Theme.Card);
             appsSub = Theme.MakeLabel("", Theme.F9, Theme.Muted, Theme.Card);
-            emptyLbl = Theme.MakeLabel("No apps yet. Drag a program (.exe or shortcut) into this window, or open your apps and use Apps → Capture windows.", Theme.F10, Theme.Muted, Theme.Card);
             warnLbl = Theme.MakeLabel("", Theme.F9, Theme.Orange, Theme.Card);
             warnLbl.Cursor = Cursors.Hand;
             warnLbl.Click += (s, e) => Host.ShowPage(Host.AppsPg);
@@ -102,7 +101,6 @@ namespace FlightDeck
             guide = new SetupGuide { Visible = false };
             guide.BtnCapture.Click += (s, e) => Host.CaptureWindows();
             guide.BtnAdd.Click += (s, e) => { Host.ShowPage(Host.AppsPg); Host.AppsPg.AddManual(); };
-            emptyLbl.Visible = false;
             appsCard.Controls.AddRange(new Control[] { appsTitle, appsSub, btnApply, tiles, guide, warnLbl });
 
             logCard = new Card();
@@ -203,9 +201,8 @@ namespace FlightDeck
 
         bool IsRunningCached(AppEntry a)
         {
-            if (string.IsNullOrWhiteSpace(a.Process)) return false;
-            string n = a.Process.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? a.Process.Substring(0, a.Process.Length - 4) : a.Process;
-            return running.Contains(n);
+            string n = Engine.ProcessName(a);
+            return n != "" && running.Contains(n);
         }
 
         protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); ScanProcesses(); }

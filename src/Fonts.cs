@@ -1,7 +1,6 @@
 using System;
 using System.Drawing;
 using System.Drawing.Text;
-using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
@@ -34,12 +33,6 @@ namespace FlightDeck
                 }
             }
             catch { return null; }
-        }
-
-        public static Font Heading(float size)
-        {
-            try { if (Cal != null) return new Font(Cal, size, FontStyle.Regular); } catch { }
-            return new Font("Segoe UI Semibold", size);
         }
     }
 }

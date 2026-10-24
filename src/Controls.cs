@@ -1,7 +1,6 @@
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
-using System.Drawing.Text;
 using System.Windows.Forms;
 
 namespace FlightDeck
@@ -130,22 +129,16 @@ namespace FlightDeck
         public static readonly Font F11S = new Font("Segoe UI Semibold", 11f);
         public static readonly Font Title = new Font("Segoe UI Semibold", 17f);
 
-        /// <summary>The FlightDeck wordmark: Cal Sans Bold, drawn with an extra outline so it reads extra heavy.</summary>
-        public static void DrawBrand(Graphics g, string text, RectangleF r, Color c)
+        /// <summary>The FlightDeck wordmark in the brand font; when fitWidth &gt; 0 it is scaled to exactly that width.</summary>
+        public static void DrawBrand(Graphics g, string text, RectangleF r, Color c, float fitWidth)
         {
             if (Fonts.Cal == null)
             {
+                // brand font couldn't be loaded: plain heavy system font instead of nothing
                 using (var f = new Font("Segoe UI Black", 15f))
                     TextRenderer.DrawText(g, text, f, Rectangle.Round(r), c, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPadding);
                 return;
             }
-            DrawBrand(g, text, r, c, 0);
-        }
-
-        /// <summary>Draws the wordmark; when fitWidth &gt; 0 the text is scaled to exactly that width.</summary>
-        public static void DrawBrand(Graphics g, string text, RectangleF r, Color c, float fitWidth)
-        {
-            if (Fonts.Cal == null) return;
             float em = 16f * g.DpiY / 72f;
             using (var path = new GraphicsPath(FillMode.Winding))
             {
@@ -180,7 +173,7 @@ namespace FlightDeck
         public static class Glyph
         {
             public const string Home = "", Apps = "", Monitor = "", Settings = "",
-                Play = "", Stop = "", Add = "", Delete = "", Edit = "",
+                Add = "", Delete = "", Edit = "",
                 View = "", Refresh = "", Folder = "", Windows = "", Save = "",
                 Link = "", Target = "", Shield = "";
         }

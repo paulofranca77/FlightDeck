@@ -27,7 +27,6 @@ namespace FlightDeck
 
         /// <summary>True once the user has been in the aircraft for a few seconds.</summary>
         public static bool FlightLoaded { get { return inFlight; } }
-        public static int CameraState { get { return camera; } }
 
         /// <summary>Keeps a connection open (and retrying) until <see cref="Stop"/>.</summary>
         public static void Start()
