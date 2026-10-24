@@ -17,6 +17,9 @@ through. Only v2.0 is published as a download; the earlier builds were private t
 - Tiles count down the apps still to open ("Starting in 14 s") or show "Waiting for sim" / "Waiting for flight",
   with a purple status dot. FlightDeck stays on screen meanwhile, and the "All set" celebration and the move to
   the tray happen only once every app, including the delayed ones, is open and in place.
+- Apps that nudge themselves a few pixels after every move (tebs Traffic Audio) are accepted where they settle
+  instead of being corrected for 30 seconds, and an app that keeps moving no longer counts as a failed start
+  (it used to block the "All set" celebration).
 - **Code clean-up** after many quick iterations: unused code removed, duplicated helpers merged (one place
   to find an app's processes, which also accepts names written with ".exe"), the engine split into smaller
   files, and the Dashboard's Position button no longer freezes the window while it opens an app from the tray.

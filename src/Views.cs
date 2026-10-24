@@ -299,7 +299,7 @@ namespace FlightDeck
                 case "Starting": case "Positioning": case "Closing": c = Theme.Orange; break;
                 case "Waiting for sim": case "Waiting for flight": c = Theme.Purple; break;
                 case "Error": case "Not found": case "Needs admin": c = Theme.Red; break;
-                case "No position yet": case "In tray": c = Theme.Orange; break;
+                case "No position yet": case "In tray": case "Moved itself": c = Theme.Orange; break;
                 default: c = s.StartsWith("Starting in") ? Theme.Purple : Theme.Faint; break;   // opens later (START column)
             }
             if (!App.Enabled) { s = "Autorun off"; c = Theme.Faint; }

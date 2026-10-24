@@ -89,6 +89,7 @@ namespace FlightDeck
         {
             public AppEntry App; public bool WasRunning; public DateTime? Found; public int Passes; public bool Warned;
             public IntPtr Handle; public string Title; public DateTime? VerifyStart; public DateTime LastFix; public int Good, Fixes; public bool Refused;
+            public string LastOff; public int SameOff;
             public DateTime Launched = DateTime.Now; public DateTime LastReveal; public int Reveals, TrayClicks; public bool InTray;
         }
 
@@ -96,6 +97,15 @@ namespace FlightDeck
         void D(string m) { var h = Debug; if (h != null) h(m); }
 
         static string Fr(RECT r) { return r.Left + "," + r.Top + " " + r.Width + "x" + r.Height; }
+
+        /// <summary>A few pixels from the target with the right size (the app adjusts itself slightly).</summary>
+        static bool Near(WinInfo w, AppEntry a)
+        {
+            const int near = 8, tol = 3;
+            return !a.Maximized && !w.Minimized && !w.Maximized &&
+                   Math.Abs(w.Frame.Left - a.X) <= near && Math.Abs(w.Frame.Top - a.Y) <= near &&
+                   Math.Abs(w.Frame.Width - a.W) <= tol && Math.Abs(w.Frame.Height - a.H) <= tol;
+        }
 
         static bool AtTarget(WinInfo w, AppEntry a)
         {
@@ -272,9 +282,23 @@ namespace FlightDeck
                         continue;
                     }
                     j.Good = 0;
+                    // Some apps (tebs Traffic Audio…) always nudge themselves a few pixels after every move.
+                    // When the window keeps coming back to the same spot right next to the target, that's its final place.
+                    if (j.Fixes >= 3 && Near(w, a))
+                    {
+                        if (j.LastOff == w.Frame.Left + "," + w.Frame.Top + "," + w.Frame.Width + "," + w.Frame.Height) j.SameOff++;
+                        else { j.SameOff = 0; j.LastOff = w.Frame.Left + "," + w.Frame.Top + "," + w.Frame.Width + "," + w.Frame.Height; }
+                        if (j.SameOff >= 3)
+                        {
+                            jobs.Remove(j); S(a, "Ready");
+                            L(a.Name + ": in position (it shifts itself " + Math.Max(Math.Abs(w.Frame.Left - a.X), Math.Abs(w.Frame.Top - a.Y)) + " px after every move, so FlightDeck leaves it there).");
+                            continue;
+                        }
+                    }
                     if ((DateTime.Now - j.VerifyStart.Value).TotalSeconds > settleSeconds)
                     {
-                        jobs.Remove(j); S(a, "Error");
+                        // the window is open, just not exactly in place: worth a line in the log, not a failed start
+                        jobs.Remove(j); S(a, "Moved itself");
                         L(a.Name + ": keeps moving away from its position (now " + Fr(w.Frame) + "). Try a longer PLACE AFTER for it (Apps page).");
                         continue;
                     }
