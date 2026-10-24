@@ -119,7 +119,7 @@ namespace FlightDeck
 
         public static string WaitStatus(AppEntry a)
         {
-            return a.StartMode == "flight" ? "Waiting for flight" : a.StartMode == "sim" ? "Waiting for sim" : "Starts later";
+            return a.StartMode == "flight" ? "Waiting for flight" : a.StartMode == "sim" ? "Waiting for sim" : "Starting in " + a.StartDelay + " s";
         }
 
         void DoStart(List<AppEntry> apps, bool positionOnly, List<AppEntry> stackApps)

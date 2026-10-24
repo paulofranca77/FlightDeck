@@ -68,7 +68,17 @@ namespace FlightDeck
             SimLink.Debug = m => Diagnostics.Write("  · " + m);
             FlightRunner.DebugSink = m => Diagnostics.Write("  · " + m);
             Diagnostics.Write("==== FlightDeck " + Application.ProductVersion + " started (elevated: " + Util.IsElevated() + ") ====");
-            Runner.Status += (a, st) => Ui(() => { Live[a.Id] = st; Dash.RefreshStatus(); });
+            Runner.Status += (a, st) => Ui(() =>
+            {
+                Live[a.Id] = st;
+                // held back by its START setting: count it down / watch for the sim from now on
+                if (a.StartMode != "now" && (st.StartsWith("Starting in") || st.StartsWith("Waiting for")) && !pendingSim.Contains(a))
+                {
+                    pendingSim.Add(a);
+                    StartSimWatch();
+                }
+                Dash.RefreshStatus();
+            });
             Runner.Done += (kind, cancelled, problems) => Ui(() => OnRunnerDone(kind, cancelled, problems));
             Runner.Progress += (done, total, label) => Ui(() => Dash.ShowProgress(done, total, label, Runner.Problems > 0));
             // Get out of the way before the final stacking pass, so FlightDeck itself never ends up covering anything.
@@ -366,6 +376,7 @@ namespace FlightDeck
 
             StopSimWatch();
             flightClock = DateTime.Now;
+            flightProblems = 0;
             Live.Clear();
             InFlight = true;
             flightProfile = Cfg.Active;
@@ -433,34 +444,20 @@ namespace FlightDeck
 
             if (kind == "start" && !cancelled)
             {
-                pendingSim = Runner.Deferred.ToList();
-                string readyText = pendingSim.Count == 0
-                    ? "Your apps are in position. Right-click the FlightDeck icon to end the flight."
-                    : "Your apps are in position. Still to open: " + string.Join(", ", pendingSim.Select(a => a.Name + " (" + a.StartLabel.ToLowerInvariant() + ")")) + ".";
-                if (pendingSim.Count > 0) StartSimWatch();
-                if (n == 0 && Visible)
+                flightProblems += n;
+                if (pendingSim.Count > 0 || Runner.Busy)
                 {
-                    int count = (flightProfile ?? Cfg.Active).Apps.Count(a => a.Enabled) - pendingSim.Count;
-                    Celebrate(Math.Max(0, count), () =>
-                    {
-                        TopMost = false;
-                        GoToTray("Flight ready ✈", readyText);
-                    });
-                }
-                else if (n == 0) GoToTray("Flight ready ✈", readyText);
-                else
-                {
-                    // something needs attention: stay on screen so the log is visible
+                    // more apps open later: stay on screen with the countdown; the celebration comes at the very end
                     TopMost = false;
-                    RestoreFromTray();
-                    Toast.Show("Flight started — check " + n + " app" + (n == 1 ? "" : "s"), "See the Activity log in FlightDeck for what went wrong.", RestoreFromTray);
+                    Dash.ShowProgress(1, 1, "Waiting to open " + Names(pendingSim) + "…", false);
                 }
+                else FinishStart();
             }
             else if (kind == "start") TopMost = false;
             else if (kind == "later" && !cancelled)
             {
-                if (n == 0) { try { Toast.Show("Opened " + Names(laterBatch), pendingSim.Count == 0 ? "All your apps are open and in position." : "More apps open later: " + Names(pendingSim) + ".", RestoreFromTray); } catch { } }
-                else { RestoreFromTray(); try { Toast.Show("Simulator ready — check " + n + " app" + (n == 1 ? "" : "s"), "See the Activity log in FlightDeck for what went wrong.", RestoreFromTray); } catch { } }
+                flightProblems += n;
+                if (pendingSim.Count == 0 && !Runner.Busy) FinishStart();
             }
             else if (kind == "end")
             {
@@ -537,11 +534,11 @@ namespace FlightDeck
                 if (a.StartMode == "delay")
                 {
                     int left = (int)Math.Ceiling(a.StartDelay - (DateTime.Now - flightClock).TotalSeconds);
-                    Live[a.Id] = left > 0 ? "Starts in " + (left >= 120 ? (left / 60) + " min" : left + " s") : "Starting";
+                    Live[a.Id] = left > 0 ? "Starting in " + (left >= 120 ? (left / 60) + " min" : left + " s") : "Starting";
                 }
                 else Live[a.Id] = FlightRunner.WaitStatus(a);
             }
-            if (!Runner.Busy) Dash.RefreshStatus();
+            Dash.RefreshStatus();   // cheap: no process lookups here
         }
 
         void CheckSim()
@@ -561,14 +558,36 @@ namespace FlightDeck
                        : ready.All(a => a.StartMode == "delay") ? "Time's up"
                        : "Ready";
             Log(why + " — opening " + Names(ready) + "…");
-            laterBatch = ready;
             runKind = "later";
             Dash.SetBusy(true);
             Dash.ShowProgress(0, 1, "Opening " + Names(ready) + "…", false);
             Runner.StartDeferred(ready, (flightProfile ?? Cfg.Active).Apps);
         }
 
-        List<AppEntry> laterBatch = new List<AppEntry>();
+        /// <summary>
+        /// Every app of the flight is open and in place (the ones with a START delay too):
+        /// the "All set" celebration, then off to the tray. If something went wrong, stay on screen instead.
+        /// </summary>
+        void FinishStart()
+        {
+            if (!InFlight) return;
+            int count = (flightProfile ?? Cfg.Active).Apps.Count(a => a.Enabled);
+            const string text = "Your apps are in position. Right-click the FlightDeck icon to end the flight.";
+            if (flightProblems == 0)
+            {
+                if (!Visible) RestoreFromTray();
+                TopMost = true;    // a moment in front, even over the simulator, so it's clear everything is ready
+                Celebrate(count, () => { TopMost = false; GoToTray("Flight ready ✈", text); });
+            }
+            else
+            {
+                TopMost = false;
+                RestoreFromTray();
+                Toast.Show("Flight started — check " + flightProblems + " app" + (flightProblems == 1 ? "" : "s"), "See the Activity log in FlightDeck for what went wrong.", RestoreFromTray);
+            }
+        }
+
+        int flightProblems;
 
         void Celebrate(int apps, Action then, bool landing = false)
         {

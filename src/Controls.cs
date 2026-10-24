@@ -16,7 +16,7 @@ namespace FlightDeck
         public static Color Sidebar, Bg, Card, CardBorder, Raised, Hover, Selected, Input, InputBorder,
             Text, SubText, Muted, Faint,
             Accent, AccentHover, AccentPressed, AccentDisabled, AccentText, AccentInk,
-            Green, Red, Orange,
+            Green, Red, Orange, Purple,
             ButtonHover, ButtonPressed, DangerHoverFill, DangerHoverText,
             ToggleOff, ToggleOffHover, KnobOff,
             NavHover, RowHover, SidebarLine, HeaderLine, MonitorFill, MonitorBorder;
@@ -82,7 +82,7 @@ namespace FlightDeck
                 Raised = Hex("1E1F24"); Hover = Hex("212228"); Selected = Hex("23242A");
                 Input = Hex("0F1013"); InputBorder = Hex("2D2E35");
                 Text = Hex("F1F1F3"); SubText = Hex("C6C8CE"); Muted = Hex("8A8C94"); Faint = Hex("6E7079");
-                Green = Hex("4CC38A"); Red = Hex("E5484D"); Orange = Hex("F2A23A");
+                Green = Hex("4CC38A"); Red = Hex("E5484D"); Orange = Hex("F2A23A"); Purple = Hex("A98BFF");
                 ButtonHover = Hex("26272D"); ButtonPressed = Hex("2A2B31");
                 DangerHoverFill = Hex("2A1A1C"); DangerHoverText = Hex("FF8A8D");
                 ToggleOff = Hex("2C2D33"); ToggleOffHover = Hex("34353C"); KnobOff = Hex("9A9CA4");
@@ -96,7 +96,7 @@ namespace FlightDeck
                 Raised = Hex("F1EFE9"); Hover = Hex("ECE9E2"); Selected = Hex("E3E0D6");
                 Input = Hex("FFFFFF"); InputBorder = Hex("D3CEC3");
                 Text = Hex("1D1F1A"); SubText = Hex("3B3E37"); Muted = Hex("62655D"); Faint = Hex("7A7D74");
-                Green = Hex("2F8A57"); Red = Hex("C2343A"); Orange = Hex("A85D00");
+                Green = Hex("2F8A57"); Red = Hex("C2343A"); Orange = Hex("A85D00"); Purple = Hex("6E46D0");
                 ButtonHover = Hex("E9E6DE"); ButtonPressed = Hex("E1DDD3");
                 DangerHoverFill = Hex("FBE8E7"); DangerHoverText = Hex("B4232A");
                 ToggleOff = Hex("CFCAC0"); ToggleOffHover = Hex("C2BDB2"); KnobOff = Hex("FFFFFF");

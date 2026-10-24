@@ -14,8 +14,9 @@ through. Only v2.0 is published as a download; the earlier builds were private t
     changes anything in the simulator.
 - The old **WAIT** column is now called **PLACE AFTER**: seconds to wait after an app's window appears before
   moving it into place. It never delayed opening the app, which the old name suggested.
-- Tiles show what's still coming ("Starts in 40 s", "Waiting for flight"), and a notification tells you when
-  they open.
+- Tiles count down the apps still to open ("Starting in 14 s") or show "Waiting for sim" / "Waiting for flight",
+  with a purple status dot. FlightDeck stays on screen meanwhile, and the "All set" celebration and the move to
+  the tray happen only once every app, including the delayed ones, is open and in place.
 - **Code clean-up** after many quick iterations: unused code removed, duplicated helpers merged (one place
   to find an app's processes, which also accepts names written with ".exe"), the engine split into smaller
   files, and the Dashboard's Position button no longer freezes the window while it opens an app from the tray.
