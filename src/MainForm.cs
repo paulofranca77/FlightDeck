@@ -622,6 +622,15 @@ namespace FlightDeck
             // Settings → Minimize to tray: minimizing goes next to the clock instead of the taskbar
             if (WindowState == FormWindowState.Minimized && Visible && tray != null && Cfg != null && !Cfg.KeepOnTaskbar)
             {
+                // While a Start Flight is still opening apps (some wait for a delay or the sim), FlightDeck
+                // stays on the taskbar: the tray is where it goes once everything is done ("All set").
+                // (Starting the simulator can minimize the windows behind it.)
+                if (Runner.Busy || pendingSim.Count > 0)
+                {
+                    Diagnostics.Write("  · minimized while apps are still opening — staying on the taskbar");
+                    return;
+                }
+                Diagnostics.Write("  · minimized — moved to the tray (Settings → Minimize to tray)");
                 Hide();
                 UpdateTrayText();
                 if (!minimizeHintShown)

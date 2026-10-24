@@ -529,7 +529,9 @@ namespace FlightDeck
 
         readonly List<AppTile> tiles = new List<AppTile>();
         Rectangle[] lanes = new Rectangle[4];
+        Rectangle[] titleR = new Rectangle[4], badgeR = new Rectangle[4], hintR = new Rectangle[4];
         int[] counts = new int[4];
+        const TextFormatFlags Wrap = TextFormatFlags.Left | TextFormatFlags.NoPadding | TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis;
 
         /// <summary>A tile was clicked (not dragged).</summary>
         public event Action<AppTile> TileClicked;
@@ -561,11 +563,11 @@ namespace FlightDeck
         {
             counts = new int[4];
             foreach (var t in tiles) counts[LaneOf(t.App)]++;
-            int gap = Theme.S(12), lanePad = Theme.S(10), head = Theme.S(50);
+            int gap = Theme.S(12), lanePad = Theme.S(10);
 
             // widths: a minimum per lane (empty lanes stay visible as drop targets), the rest shared by app count
             int total = Math.Max(4, width - 3 * gap);
-            int minEmpty = Theme.S(150), minFull = Theme.S(220);
+            int minEmpty = Theme.S(118), minFull = Theme.S(210);   // empty lanes stay narrow: just a place to drop
             var w = new int[4];
             int sumMin = 0;
             for (int i = 0; i < 4; i++) { w[i] = counts[i] > 0 ? minFull : minEmpty; sumMin += w[i]; }
@@ -576,6 +578,17 @@ namespace FlightDeck
                 for (int i = 0; i < 4; i++) w[i] += n == 0 ? extra / 4 : extra * counts[i] / n;
             }
 
+            // header of each lane: title (wraps to two lines in a narrow lane) + count badge, then the hint, wrapped
+            int head = 0;
+            var titleH = new int[4];
+            for (int i = 0; i < 4; i++)
+            {
+                int inner = Math.Max(Theme.S(40), w[i] - Theme.S(28));
+                int titleW = Math.Max(Theme.S(30), inner - Theme.S(14) - Theme.S(22) - Theme.S(8));
+                titleH[i] = TextRenderer.MeasureText(Titles[i].ToUpperInvariant(), Theme.F9S, new Size(titleW, int.MaxValue), Wrap).Height;
+                int hintH = TextRenderer.MeasureText(Hints[i], Theme.F8, new Size(inner, int.MaxValue), Wrap).Height;
+                head = Math.Max(head, Theme.S(11) + Math.Max(titleH[i], Theme.S(18)) + Theme.S(4) + hintH + Theme.S(10));
+            }
             int th = Theme.S(64), tgap = Theme.S(8), rowsMax = 1;
             int[] cols = new int[4];
             for (float k = 1f; ; k -= 0.05f)
@@ -595,7 +608,17 @@ namespace FlightDeck
             int height = head + rowsMax * th + (rowsMax - 1) * tgap + lanePad;
 
             int x = 0;
-            for (int i = 0; i < 4; i++) { lanes[i] = new Rectangle(x, 0, w[i], height); x += w[i] + gap; }
+            for (int i = 0; i < 4; i++)
+            {
+                lanes[i] = new Rectangle(x, 0, w[i], height);
+                int inner = Math.Max(Theme.S(40), w[i] - Theme.S(28));
+                int titleW = Math.Max(Theme.S(30), inner - Theme.S(14) - Theme.S(22) - Theme.S(8));
+                int tx = x + Theme.S(14) + Theme.S(14);
+                titleR[i] = new Rectangle(tx, Theme.S(11), titleW, Math.Max(titleH[i], Theme.S(18)));
+                badgeR[i] = new Rectangle(x + w[i] - Theme.S(14) - Theme.S(22), Theme.S(10), Theme.S(22), Theme.S(18));
+                hintR[i] = new Rectangle(x + Theme.S(14), titleR[i].Bottom + Theme.S(4), inner, head - titleR[i].Bottom - Theme.S(8));
+                x += w[i] + gap;
+            }
             var seen = new int[4];
             foreach (var t in tiles)
             {
@@ -668,21 +691,14 @@ namespace FlightDeck
                 Theme.FillRound(g, hot ? Theme.Alpha(Theme.Accent, 28) : Theme.Bg, new RectangleF(r.X + 0.5f, r.Y + 0.5f, r.Width - 1, r.Height - 1), Theme.S(12),
                     hot ? Theme.Accent : Theme.CardBorder);
                 Color c = i == 0 ? Theme.Accent : Theme.Purple;
-                int px = r.X + Theme.S(14);
-                using (var b = new SolidBrush(c)) g.FillEllipse(b, px, r.Y + Theme.S(15), Theme.S(8), Theme.S(8));
-                var title = Titles[i].ToUpperInvariant();
-                var flags = TextFormatFlags.Left | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
-                int tw = TextRenderer.MeasureText(g, title, Theme.F9S, Size.Empty, TextFormatFlags.NoPadding).Width;
-                TextRenderer.DrawText(g, title, Theme.F9S, new Rectangle(px + Theme.S(14), r.Y + Theme.S(10), r.Width - Theme.S(60), Theme.S(18)), Theme.Text, flags);
-                // count badge
-                string n = counts[i].ToString();
-                var badge = new Rectangle(Math.Min(px + Theme.S(14) + tw + Theme.S(8), r.Right - Theme.S(34)), r.Y + Theme.S(9), Theme.S(22), Theme.S(18));
-                Theme.FillRound(g, Theme.Raised, badge, Theme.S(9), Theme.CardBorder);
-                TextRenderer.DrawText(g, n, Theme.F8, badge, Theme.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-                TextRenderer.DrawText(g, Hints[i], Theme.F8, new Rectangle(px, r.Y + Theme.S(30), r.Width - Theme.S(24), Theme.S(16)), Theme.Muted, flags);
+                using (var b = new SolidBrush(c)) g.FillEllipse(b, r.X + Theme.S(14), titleR[i].Y + Theme.S(5), Theme.S(8), Theme.S(8));
+                TextRenderer.DrawText(g, Titles[i].ToUpperInvariant(), Theme.F9S, titleR[i], Theme.Text, Wrap);
+                Theme.FillRound(g, Theme.Raised, badgeR[i], Theme.S(9), Theme.CardBorder);
+                TextRenderer.DrawText(g, counts[i].ToString(), Theme.F8, badgeR[i], Theme.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+                TextRenderer.DrawText(g, Hints[i], Theme.F8, hintR[i], Theme.Muted, Wrap);
                 if (counts[i] == 0 || (dragging && drag != null && LaneOf(drag.App) == i && counts[i] == 1))
-                    TextRenderer.DrawText(g, "Drag apps here", Theme.F9, new Rectangle(r.X, r.Y + Theme.S(50), r.Width, r.Height - Theme.S(56)),
-                        hot ? Theme.AccentInk : Theme.Faint, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+                    TextRenderer.DrawText(g, "Drag apps here", Theme.F9, new Rectangle(r.X + Theme.S(6), hintR[i].Bottom, r.Width - Theme.S(12), r.Bottom - hintR[i].Bottom - Theme.S(6)),
+                        hot ? Theme.AccentInk : Theme.Faint, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.WordBreak);
             }
         }
     }
